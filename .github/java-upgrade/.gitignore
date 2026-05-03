@@ -1,18 +1,17 @@
-# Java
+# Maven
 target/
-*.log
 
-# IntelliJ / VSCode
-.idea/
-.vscode/
+# Logs
+*.log
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Python (IMPORTANT — your mistake)
-venv/
-__pycache__/
+# IDE
+.idea/
+.vscode/
+*.iml
 
-# Env files
+# Env
 .env
