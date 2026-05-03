@@ -1,0 +1,18 @@
+# Java
+target/
+*.log
+
+# IntelliJ / VSCode
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python (IMPORTANT — your mistake)
+venv/
+__pycache__/
+
+# Env files
+.env
