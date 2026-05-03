@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -26,6 +28,16 @@ public class GitHubIngestionService {
     private final GitHubRunMapper mapper;
     private final MonitoredRepositoryRepository repositoryRepository;
     private final PipelineRunRepository pipelineRunRepository;
+
+    @Caching(evict = {
+        @CacheEvict(value = "repositoryMetrics", key = "#repositoryId + '_7d'"),
+        @CacheEvict(value = "repositoryMetrics", key = "#repositoryId + '_30d'"),
+        @CacheEvict(value = "repositoryMetrics", key = "#repositoryId + '_all'"),
+        @CacheEvict(value = "flakyWorkflows",    key = "#repositoryId + '_7d'"),
+        @CacheEvict(value = "flakyWorkflows",    key = "#repositoryId + '_30d'"),
+        @CacheEvict(value = "buildTrend",        key = "#repositoryId + '_7d'"),
+        @CacheEvict(value = "buildTrend",        key = "#repositoryId + '_30d'")
+    })
 
     @Transactional
     public int syncRepository(Long repositoryId) {

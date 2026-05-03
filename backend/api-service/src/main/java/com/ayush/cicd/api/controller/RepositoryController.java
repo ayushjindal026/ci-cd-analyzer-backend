@@ -8,6 +8,11 @@ import com.ayush.cicd.ingestion.service.GitHubIngestionService;
 import com.ayush.cicd.api.dto.response.PagedResponse;
 import com.ayush.cicd.api.dto.response.PipelineRunResponse;
 import com.ayush.cicd.api.service.PipelineRunService;
+import com.ayush.cicd.analytics.service.AnalyticsService;
+import com.ayush.cicd.analytics.dto.RepositoryMetricsDto;
+import com.ayush.cicd.analytics.dto.FlakyWorkflowDto;
+import com.ayush.cicd.analytics.dto.TrendPointDto;
+import java.util.List;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +33,7 @@ public class RepositoryController {
     private final RepositoryService repositoryService;
     private final GitHubIngestionService gitHubIngestionService;
     private final PipelineRunService pipelineRunService;
+    private final AnalyticsService analyticsService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<RepositoryResponse>>> getAllRepositories() {
@@ -107,5 +113,33 @@ public class RepositoryController {
             @PathVariable Long runId) {
         PipelineRunResponse run = pipelineRunService.getRunById(runId);
         return ResponseEntity.ok(ApiResponse.success(run));
+    }
+
+        /**
+     * GET /api/v1/repositories/{id}/metrics?window=7d
+     * window options: 7d, 30d, all
+     */
+    @GetMapping("/{id}/metrics")
+    public ResponseEntity<ApiResponse<RepositoryMetricsDto>> getMetrics(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "30d") String window) {
+        RepositoryMetricsDto metrics = analyticsService.getRepositoryMetrics(id, window);
+        return ResponseEntity.ok(ApiResponse.success(metrics));
+    }
+
+    @GetMapping("/{id}/metrics/trend")
+    public ResponseEntity<ApiResponse<List<TrendPointDto>>> getBuildTrend(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "30d") String window) {
+        List<TrendPointDto> trend = analyticsService.getBuildTrend(id, window);
+        return ResponseEntity.ok(ApiResponse.success(trend));
+    }
+
+    @GetMapping("/{id}/flaky")
+    public ResponseEntity<ApiResponse<List<FlakyWorkflowDto>>> getFlakyWorkflows(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "30d") String window) {
+        List<FlakyWorkflowDto> flaky = analyticsService.getFlakyWorkflows(id, window);
+        return ResponseEntity.ok(ApiResponse.success(flaky));
     }
 }
