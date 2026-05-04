@@ -3,13 +3,18 @@ venv/
 __pycache__/
 *.pyc
 
-# Env
+# Env (VERY IMPORTANT)
 .env
+ai-service/.env
 
-# Java
+# Java / Maven
 target/
 *.class
 *.jar
+
+# Logs
+*.log
+.github/java-upgrade/*/logs/
 
 # IDE
 .vscode/

@@ -1,7 +1,0 @@
-com\ayush\cicd\ingestion\client\GitHubActionsClient.class
-com\ayush\cicd\ingestion\service\GitHubIngestionService.class
-com\ayush\cicd\ingestion\client\dto\GitHubWorkflowRunDto.class
-com\ayush\cicd\ingestion\config\GitHubProperties.class
-com\ayush\cicd\ingestion\mapper\GitHubRunMapper.class
-com\ayush\cicd\ingestion\client\dto\GitHubWorkflowRunsResponse.class
-com\ayush\cicd\ingestion\scheduler\SyncScheduler.class

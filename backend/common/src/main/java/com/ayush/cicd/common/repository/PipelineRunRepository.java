@@ -67,4 +67,7 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
     List<PipelineRun> findFlakyRuns(
             @Param("repoId") Long repoId,
             @Param("since") Instant since);
+
+        @Query("SELECT pr FROM PipelineRun pr JOIN FETCH pr.repository WHERE pr.id = :id")
+        Optional<PipelineRun> findByIdWithRepository(@Param("id") Long id);
 }

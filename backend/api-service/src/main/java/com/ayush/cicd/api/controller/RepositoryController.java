@@ -1,18 +1,26 @@
 package com.ayush.cicd.api.controller;
 
+import com.ayush.cicd.common.entity.PipelineRun;
+import com.ayush.cicd.common.entity.RunAnalysis;
+import com.ayush.cicd.common.exception.ResourceNotFoundException;
+import com.ayush.cicd.common.repository.PipelineRunRepository;
+import com.ayush.cicd.common.repository.RunAnalysisRepository;
+import com.ayush.cicd.ingestion.client.AiAnalysisClient;
+
 import com.ayush.cicd.api.dto.request.AddRepositoryRequest;
 import com.ayush.cicd.api.dto.response.ApiResponse;
 import com.ayush.cicd.api.dto.response.RepositoryResponse;
-import com.ayush.cicd.api.service.RepositoryService;
-import com.ayush.cicd.ingestion.service.GitHubIngestionService;
 import com.ayush.cicd.api.dto.response.PagedResponse;
 import com.ayush.cicd.api.dto.response.PipelineRunResponse;
+
+import com.ayush.cicd.api.service.RepositoryService;
 import com.ayush.cicd.api.service.PipelineRunService;
+import com.ayush.cicd.ingestion.service.GitHubIngestionService;
+
 import com.ayush.cicd.analytics.service.AnalyticsService;
 import com.ayush.cicd.analytics.dto.RepositoryMetricsDto;
 import com.ayush.cicd.analytics.dto.FlakyWorkflowDto;
 import com.ayush.cicd.analytics.dto.TrendPointDto;
-import java.util.List;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -35,18 +43,20 @@ public class RepositoryController {
     private final PipelineRunService pipelineRunService;
     private final AnalyticsService analyticsService;
 
+    private final RunAnalysisRepository runAnalysisRepository;
+    private final PipelineRunRepository pipelineRunRepository;
+    private final AiAnalysisClient aiAnalysisClient;
+
+    // ===================== REPOSITORY =====================
+
     @GetMapping
     public ResponseEntity<ApiResponse<List<RepositoryResponse>>> getAllRepositories() {
-        List<RepositoryResponse> repos = repositoryService.findAllActive();
-        return ResponseEntity.ok(ApiResponse.success(repos));
+        return ResponseEntity.ok(ApiResponse.success(repositoryService.findAllActive()));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<RepositoryResponse>> getRepository(
-            @PathVariable Long id) {
-
-        RepositoryResponse repo = repositoryService.findById(id);
-        return ResponseEntity.ok(ApiResponse.success(repo));
+    public ResponseEntity<ApiResponse<RepositoryResponse>> getRepository(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(repositoryService.findById(id)));
     }
 
     @PostMapping
@@ -55,18 +65,17 @@ public class RepositoryController {
 
         RepositoryResponse response = repositoryService.addRepository(request);
 
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
+        return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response, "Repository added successfully"));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<ApiResponse<Void>> deactivateRepository(
-            @PathVariable Long id) {
-
+    public ResponseEntity<ApiResponse<Void>> deactivateRepository(@PathVariable Long id) {
         repositoryService.deactivateRepository(id);
         return ResponseEntity.ok(ApiResponse.success(null, "Repository deactivated"));
     }
+
+    // ===================== SYNC =====================
 
     @PostMapping("/{id}/sync")
     public ResponseEntity<ApiResponse<String>> syncRepository(@PathVariable Long id) {
@@ -76,70 +85,129 @@ public class RepositoryController {
         int newRuns = gitHubIngestionService.syncRepository(id);
 
         return ResponseEntity.ok(
-                ApiResponse.success(
-                        newRuns + " new runs ingested",
-                        "Sync completed"
-                )
+                ApiResponse.success(newRuns + " new runs ingested", "Sync completed")
         );
     }
 
-        /**
-     * GET /api/v1/repositories/{id}/runs
-     * Paginated run history for a repository, newest first.
-     *
-     * Query params:
-     *   page — zero-based page number (default 0)
-     *   size — results per page (default 20, max 100)
-     *
-     * Example: /api/v1/repositories/2/runs?page=0&size=10
-     */
+    // ===================== RUNS =====================
+
     @GetMapping("/{id}/runs")
     public ResponseEntity<ApiResponse<PagedResponse<PipelineRunResponse>>> getRunsForRepository(
             @PathVariable Long id,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        PagedResponse<PipelineRunResponse> runs =
-                pipelineRunService.getRunsForRepository(id, page, size);
-        return ResponseEntity.ok(ApiResponse.success(runs));
+
+        return ResponseEntity.ok(ApiResponse.success(
+                pipelineRunService.getRunsForRepository(id, page, size)
+        ));
     }
 
-    /**
-     * GET /api/v1/repositories/{repoId}/runs/{runId}
-     * Single run detail — used for the run detail page showing AI analysis.
-     */
     @GetMapping("/{repoId}/runs/{runId}")
     public ResponseEntity<ApiResponse<PipelineRunResponse>> getRun(
             @PathVariable Long repoId,
             @PathVariable Long runId) {
-        PipelineRunResponse run = pipelineRunService.getRunById(runId);
-        return ResponseEntity.ok(ApiResponse.success(run));
+
+        PipelineRun run = pipelineRunRepository.findByIdWithRepository(runId)
+                .orElseThrow(() -> new ResourceNotFoundException("PipelineRun", runId));
+
+        if (!run.getRepository().getId().equals(repoId)) {
+            throw new ResourceNotFoundException("PipelineRun not in this repository", runId);
+        }
+
+        PipelineRunResponse response = pipelineRunService.getRunById(runId);
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 
-        /**
-     * GET /api/v1/repositories/{id}/metrics?window=7d
-     * window options: 7d, 30d, all
-     */
+    // ===================== ANALYSIS =====================
+
+    @GetMapping("/{repoId}/runs/{runId}/analysis")
+    public ResponseEntity<ApiResponse<RunAnalysis>> getAnalysis(
+            @PathVariable Long repoId,
+            @PathVariable Long runId) {
+
+        PipelineRun run = pipelineRunRepository.findByIdWithRepository(runId)
+                .orElseThrow(() -> new ResourceNotFoundException("PipelineRun", runId));
+
+        if (!run.getRepository().getId().equals(repoId)) {
+            throw new ResourceNotFoundException("RunAnalysis not in this repository", runId);
+        }
+
+        RunAnalysis analysis = runAnalysisRepository
+                .findByPipelineRunId(runId)
+                .orElseThrow(() -> new ResourceNotFoundException("RunAnalysis", runId));
+
+        return ResponseEntity.ok(ApiResponse.success(analysis));
+    }
+
+    @PostMapping("/{repoId}/runs/{runId}/analyse")
+    public ResponseEntity<ApiResponse<String>> triggerAnalysis(
+            @PathVariable Long repoId,
+            @PathVariable Long runId) {
+
+        log.info("Manual AI analysis triggered for runId={}", runId);
+
+        PipelineRun run = pipelineRunRepository.findByIdWithRepository(runId)
+                .orElseThrow(() -> new ResourceNotFoundException("PipelineRun", runId));
+
+        if (!run.getRepository().getId().equals(repoId)) {
+            throw new ResourceNotFoundException("PipelineRun not in this repository", runId);
+        }
+
+        if (runAnalysisRepository.existsByPipelineRunId(runId)) {
+            return ResponseEntity.ok(
+                    ApiResponse.success("Analysis already exists for this run")
+            );
+        }
+
+        RunAnalysis analysis = aiAnalysisClient.analyse(run);
+
+        if (analysis != null) {
+            runAnalysisRepository.save(analysis);
+
+            log.info("AI analysis saved for runId={}, category={}",
+                    runId, analysis.getCategory());
+
+            return ResponseEntity.ok(
+                    ApiResponse.success("Analysis complete - category: " + analysis.getCategory())
+            );
+        }
+
+        log.error("AI analysis failed for runId={}", runId);
+
+        return ResponseEntity.ok(
+                ApiResponse.error("AI analysis failed — check AI service logs")
+        );
+    }
+
+    // ===================== ANALYTICS =====================
+
     @GetMapping("/{id}/metrics")
     public ResponseEntity<ApiResponse<RepositoryMetricsDto>> getMetrics(
             @PathVariable Long id,
             @RequestParam(defaultValue = "30d") String window) {
-        RepositoryMetricsDto metrics = analyticsService.getRepositoryMetrics(id, window);
-        return ResponseEntity.ok(ApiResponse.success(metrics));
+
+        return ResponseEntity.ok(ApiResponse.success(
+                analyticsService.getRepositoryMetrics(id, window)
+        ));
     }
 
     @GetMapping("/{id}/metrics/trend")
     public ResponseEntity<ApiResponse<List<TrendPointDto>>> getBuildTrend(
             @PathVariable Long id,
             @RequestParam(defaultValue = "30d") String window) {
-        List<TrendPointDto> trend = analyticsService.getBuildTrend(id, window);
-        return ResponseEntity.ok(ApiResponse.success(trend));
+
+        return ResponseEntity.ok(ApiResponse.success(
+                analyticsService.getBuildTrend(id, window)
+        ));
     }
 
     @GetMapping("/{id}/flaky")
     public ResponseEntity<ApiResponse<List<FlakyWorkflowDto>>> getFlakyWorkflows(
             @PathVariable Long id,
             @RequestParam(defaultValue = "30d") String window) {
-        List<FlakyWorkflowDto> flaky = analyticsService.getFlakyWorkflows(id, window);
-        return ResponseEntity.ok(ApiResponse.success(flaky));
+
+        return ResponseEntity.ok(ApiResponse.success(
+                analyticsService.getFlakyWorkflows(id, window)
+        ));
     }
 }
