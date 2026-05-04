@@ -10,6 +10,7 @@ import com.ayush.cicd.ingestion.client.AiAnalysisClient;
 import com.ayush.cicd.api.dto.request.AddRepositoryRequest;
 import com.ayush.cicd.api.dto.response.ApiResponse;
 import com.ayush.cicd.api.dto.response.RepositoryResponse;
+import com.ayush.cicd.api.dto.response.RunAnalysisResponse;
 import com.ayush.cicd.api.dto.response.PagedResponse;
 import com.ayush.cicd.api.dto.response.PipelineRunResponse;
 
@@ -121,22 +122,35 @@ public class RepositoryController {
     // ===================== ANALYSIS =====================
 
     @GetMapping("/{repoId}/runs/{runId}/analysis")
-    public ResponseEntity<ApiResponse<RunAnalysis>> getAnalysis(
+    public ResponseEntity<ApiResponse<RunAnalysisResponse>> getRunAnalysis(
             @PathVariable Long repoId,
             @PathVariable Long runId) {
 
+        // Verify the run exists AND belongs to this repo
         PipelineRun run = pipelineRunRepository.findByIdWithRepository(runId)
                 .orElseThrow(() -> new ResourceNotFoundException("PipelineRun", runId));
 
         if (!run.getRepository().getId().equals(repoId)) {
-            throw new ResourceNotFoundException("RunAnalysis not in this repository", runId);
+            throw new ResourceNotFoundException("PipelineRun not found in this repository", runId);
         }
 
-        RunAnalysis analysis = runAnalysisRepository
-                .findByPipelineRunId(runId)
-                .orElseThrow(() -> new ResourceNotFoundException("RunAnalysis", runId));
+        RunAnalysis analysis = runAnalysisRepository.findByPipelineRunId(runId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No analysis available for run", runId));
 
-        return ResponseEntity.ok(ApiResponse.success(analysis));
+        RunAnalysisResponse response = RunAnalysisResponse.builder()
+                .id(analysis.getId())
+                .pipelineRunId(runId)
+                .category(analysis.getCategory())
+                .rootCauseSummary(analysis.getRootCauseSummary())
+                .suggestedFix(analysis.getSuggestedFix())
+                .confidenceScore(analysis.getConfidenceScore())
+                .analysedByModel(analysis.getAnalysedByModel())
+                .logSnippet(analysis.getLogSnippet())
+                .createdAt(analysis.getCreatedAt())
+                .build();
+
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 
     @PostMapping("/{repoId}/runs/{runId}/analyse")

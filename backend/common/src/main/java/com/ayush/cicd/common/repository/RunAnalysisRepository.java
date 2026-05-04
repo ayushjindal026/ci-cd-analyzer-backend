@@ -12,5 +12,4 @@ public interface RunAnalysisRepository extends JpaRepository<RunAnalysis, Long> 
     Optional<RunAnalysis> findByPipelineRunId(Long pipelineRunId);
 
     boolean existsByPipelineRunId(Long pipelineRunId);
-    boolean existsByRunId(Long runId);
 }
