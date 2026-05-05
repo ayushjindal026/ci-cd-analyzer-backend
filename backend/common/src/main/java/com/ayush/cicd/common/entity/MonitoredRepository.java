@@ -1,5 +1,6 @@
 package com.ayush.cicd.common.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.ayush.cicd.common.enums.PipelineSource;
 import jakarta.persistence.*;
 import lombok.*;
@@ -13,25 +14,19 @@ import java.util.List;
  *
  * WHY a separate entity, not just a column on PipelineRun?
  * - lastSyncedAt lives here — needed for incremental syncs
- *   (only fetch runs newer than this timestamp, not all history)
+ * (only fetch runs newer than this timestamp, not all history)
  * - Alert thresholds are configured per-repo
  * - One repo has thousands of runs. Normalizing avoids repeating
- *   owner/repoName on every single run row in the DB.
+ * owner/repoName on every single run row in the DB.
  *
  * WHY table name 'monitored_repositories' not 'repository'?
  * 'repository' is a reserved keyword in some SQL dialects.
  * Always use explicit table names to avoid Hibernate generating bad SQL.
  */
 @Entity
-@Table(
-    name = "monitored_repositories",
-    uniqueConstraints = {
-        @UniqueConstraint(
-            name = "uq_repo_owner_name_source",
-            columnNames = {"owner", "repo_name", "source"}
-        )
-    }
-)
+@Table(name = "monitored_repositories", uniqueConstraints = {
+        @UniqueConstraint(name = "uq_repo_owner_name_source", columnNames = { "owner", "repo_name", "source" })
+})
 @Getter
 @Setter
 @Builder
@@ -69,6 +64,18 @@ public class MonitoredRepository extends BaseEntity {
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     private boolean active = true;
+    /**
+     * The user who added this repository.
+     * WHY nullable = true?
+     * Existing seeded rows don't have a user. All new rows
+     * created through the API will have user enforced at
+     * the service layer. We add NOT NULL in a future migration
+     * once all existing rows are cleaned up.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = true)
+    @JsonIgnore
+    private User user;
 
     /**
      * WHY FetchType.LAZY?
@@ -81,11 +88,7 @@ public class MonitoredRepository extends BaseEntity {
      * for analytics. We soft-delete repos (active = false) instead of
      * hard-deleting them. Runs are never orphaned.
      */
-    @OneToMany(
-        mappedBy = "repository",
-        cascade = {CascadeType.PERSIST, CascadeType.MERGE},
-        fetch = FetchType.LAZY
-    )
+    @OneToMany(mappedBy = "repository", cascade = { CascadeType.PERSIST, CascadeType.MERGE }, fetch = FetchType.LAZY)
     @Builder.Default
     private List<PipelineRun> runs = new ArrayList<>();
 }

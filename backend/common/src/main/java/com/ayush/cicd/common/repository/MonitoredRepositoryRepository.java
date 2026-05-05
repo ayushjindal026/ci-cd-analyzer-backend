@@ -1,6 +1,7 @@
 package com.ayush.cicd.common.repository;
 
 import com.ayush.cicd.common.entity.MonitoredRepository;
+import com.ayush.cicd.common.entity.User;
 import com.ayush.cicd.common.enums.PipelineSource;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -23,11 +24,13 @@ import java.util.Optional;
 @Repository
 public interface MonitoredRepositoryRepository extends JpaRepository<MonitoredRepository, Long> {
 
-    Optional<MonitoredRepository> findByOwnerAndRepoNameAndSource(
-            String owner, String repoName, PipelineSource source);
+        Optional<MonitoredRepository> findByOwnerAndRepoNameAndSource(
+                        String owner, String repoName, PipelineSource source);
 
-    List<MonitoredRepository> findByActiveTrue();
+        List<MonitoredRepository> findByActiveTrue();
 
-    boolean existsByOwnerAndRepoNameAndSource(
-            String owner, String repoName, PipelineSource source);
+        List<MonitoredRepository> findByActiveTrueAndUser(User user);
+
+        boolean existsByOwnerAndRepoNameAndSourceAndUser(
+                        String owner, String repoName, PipelineSource source, User user);
 }

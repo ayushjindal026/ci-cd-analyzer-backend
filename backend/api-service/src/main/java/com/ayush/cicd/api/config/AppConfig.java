@@ -1,5 +1,6 @@
 package com.ayush.cicd.api.config;
 
+import com.ayush.cicd.api.security.JwtProperties;
 import com.ayush.cicd.ingestion.config.GitHubProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.cache.annotation.EnableCaching;
@@ -14,6 +15,6 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 @EnableCaching
-@EnableConfigurationProperties(GitHubProperties.class)
+@EnableConfigurationProperties({GitHubProperties.class, JwtProperties.class})
 public class AppConfig {
 }
