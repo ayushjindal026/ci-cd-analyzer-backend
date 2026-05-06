@@ -331,10 +331,9 @@ $env:JWT_SECRET="your_jwt_secret"
 Open NEW terminal:
 
 ```bash
-cd backend/api-service
-
+cd backend
 mvn clean install
-
+cd backend/api-service
 mvn spring-boot:run
 ```
 
