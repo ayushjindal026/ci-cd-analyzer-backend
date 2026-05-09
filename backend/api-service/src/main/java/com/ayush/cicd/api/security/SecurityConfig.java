@@ -1,14 +1,20 @@
 package com.ayush.cicd.api.security;
 
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+
 import org.springframework.security.config.http.SessionCreationPolicy;
+
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -16,73 +22,145 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
 
 /**
- * Spring Security configuration.
+ * Security Configuration
  *
- * WHY STATELESS session?
- * JWT is self-contained. No server-side session needed.
- * Every request carries its own authentication in the token.
- * This makes the app horizontally scalable — any instance
- * can handle any request without shared session state.
+ * Supports:
+ * - GitHub OAuth2 Login
+ * - JWT Authentication
+ * - Swagger/OpenAPI
+ * - React frontend (Vite/CRA)
  *
- * WHY disable CSRF?
- * CSRF protection is for cookie-based authentication.
- * JWT in Authorization header is immune to CSRF attacks —
- * a malicious site cannot read the JWT from another domain
- * because it's not in a cookie. Disabling CSRF is correct
- * and safe for JWT-based REST APIs.
+ * WHY IF_REQUIRED INSTEAD OF STATELESS?
+ * OAuth2 login requires HTTP session persistence.
+ * After successful GitHub authentication, Spring Security
+ * stores the authenticated user inside the session.
  *
- * WHY CORS config here?
- * The React frontend runs on localhost:5173 (Vite default).
- * Without CORS, the browser blocks all API calls from
- * a different origin. This config allows the frontend to
- * call the backend during development.
+ * STATELESS breaks OAuth because authentication disappears
+ * immediately after redirect.
+ *
+ * IF_REQUIRED allows:
+ * - OAuth session support
+ * - JWT support simultaneously
+ *
+ * This is a hybrid authentication architecture.
  */
+
 @Configuration
 @EnableWebSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+        private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        return http
-                .csrf(AbstractHttpConfigurer::disable)
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        // Public endpoints — no token needed
-                        .requestMatchers(
-                                "/api/v1/auth/**",
-                                "/actuator/health",
-                                "/actuator/info")
-                        .permitAll()
-                        // Everything else requires a valid JWT
-                        .anyRequest().authenticated())
-                .addFilterBefore(
-                        jwtAuthenticationFilter,
-                        UsernamePasswordAuthenticationFilter.class)
-                .build();
-    }
+        @Bean
+        public SecurityFilterChain securityFilterChain(
+                        HttpSecurity http) throws Exception {
 
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration config = new CorsConfiguration();
+                return http
 
-        // WHY specific origins and not "*"?
-        // Wildcard "*" cannot be used with credentials (Authorization header).
-        // Must list specific allowed origins explicitly.
-        config.setAllowedOrigins(List.of(
-                "http://localhost:5173", // Vite dev server
-                "http://localhost:3000", // Create React App fallback
-                "http://localhost:8081" // Same-origin for testing
-        ));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("*"));
-        config.setAllowCredentials(true);
+                                // ─────────────────────────────────────────────────────────────
+                                // CSRF
+                                // ─────────────────────────────────────────────────────────────
 
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
-        return source;
-    }
+                                .csrf(AbstractHttpConfigurer::disable)
+
+                                // ─────────────────────────────────────────────────────────────
+                                // CORS
+                                // ─────────────────────────────────────────────────────────────
+
+                                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
+                                // ─────────────────────────────────────────────────────────────
+                                // SESSION MANAGEMENT
+                                // IMPORTANT:
+                                // OAuth2 REQUIRES SESSION
+                                // ─────────────────────────────────────────────────────────────
+
+                                .sessionManagement(session -> session.sessionCreationPolicy(
+                                                SessionCreationPolicy.STATELESS))
+
+                                // ─────────────────────────────────────────────────────────────
+                                // AUTHORIZATION RULES
+                                // ─────────────────────────────────────────────────────────────
+
+                                .authorizeHttpRequests(auth -> auth
+
+                                                .requestMatchers(
+
+                                                                // AUTH
+                                                                "/api/v1/auth/**",
+
+                                                                // OAUTH
+                                                                "/oauth2/**",
+                                                                "/login/**",
+
+                                                                // SWAGGER
+                                                                "/swagger-ui/**",
+                                                                "/swagger-ui.html",
+                                                                "/v3/api-docs/**",
+                                                                "/webjars/**",
+
+                                                                // ACTUATOR
+                                                                "/actuator/**"
+
+                                                ).permitAll()
+
+                                                .anyRequest().authenticated())
+
+                                // ─────────────────────────────────────────────────────────────
+                                // OAUTH2 LOGIN
+                                // ─────────────────────────────────────────────────────────────
+                                // ─────────────────────────────────────────────────────────────
+                                // JWT FILTER
+                                // ─────────────────────────────────────────────────────────────
+
+                                .addFilterBefore(
+                                                jwtAuthenticationFilter,
+                                                UsernamePasswordAuthenticationFilter.class)
+
+                                .build();
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // CORS CONFIGURATION
+        // ─────────────────────────────────────────────────────────────────────────
+
+        @Bean
+        public CorsConfigurationSource corsConfigurationSource() {
+
+                CorsConfiguration config = new CorsConfiguration();
+
+                // IMPORTANT:
+                // "*" cannot be used with credentials=true
+
+                config.setAllowedOrigins(List.of(
+
+                                // Vite
+                                "http://localhost:5173",
+
+                                // React CRA
+                                "http://localhost:3000",
+
+                                // Backend self-origin
+                                "http://localhost:8081"));
+
+                config.setAllowedMethods(List.of(
+                                "GET",
+                                "POST",
+                                "PUT",
+                                "DELETE",
+                                "OPTIONS"));
+
+                config.setAllowedHeaders(List.of("*"));
+
+                config.setAllowCredentials(true);
+
+                UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+
+                source.registerCorsConfiguration(
+                                "/**",
+                                config);
+
+                return source;
+        }
 }

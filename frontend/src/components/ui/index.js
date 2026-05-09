@@ -1,0 +1,10 @@
+// ─── src/components/ui/index.js ───────────────────────────────────────────────
+// Barrel export so pages can do: import { Spinner, ErrorBanner } from '@/components/ui'
+export { Spinner, FullPageSpinner } from './Spinner'
+export { Badge } from './Badge'
+export { StatCard } from './StatCard'
+export { EmptyState } from './EmptyState'
+export { ErrorBanner } from './ErrorBanner'
+export { Modal } from './Modal'
+export { Tooltip } from './Tooltip'
+export { SkeletonRows } from './SkeletonRow'

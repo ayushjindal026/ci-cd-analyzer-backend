@@ -78,15 +78,14 @@ public class AiAnalysisClient {
                     .logSnippet(response.getLogSnippet())
                     .build();
 
-        } 
-        catch (WebClientResponseException e) {
+        } catch (WebClientResponseException e) {
             log.error("AI HTTP ERROR for run {}", run.getId(), e);
             return null;
         }
 
         catch (Exception e) {
-            e.printStackTrace(); 
-            throw new RuntimeException(e); 
+            e.printStackTrace();
+            throw new RuntimeException(e);
         }
     }
 
@@ -113,23 +112,31 @@ public class AiAnalysisClient {
                 run.getBranch() != null ? run.getBranch() : "main",
                 run.getStatus().name(),
                 run.getHeadSha(),
-                run.getDurationMs() != null ? run.getDurationMs().intValue() : null
-        );
+                run.getDurationMs() != null ? run.getDurationMs().intValue() : null);
     }
 
     // ── Inner DTOs — request/response for the Python AI service ──────────────
 
     @Data
     static class AiAnalysisRequest {
-        @JsonProperty("run_id")       private final Long runId;
-        @JsonProperty("external_run_id") private final String externalRunId;
-        @JsonProperty("owner")        private final String owner;
-        @JsonProperty("repo_name")    private final String repoName;
-        @JsonProperty("workflow_name") private final String workflowName;
-        @JsonProperty("branch")       private final String branch;
-        @JsonProperty("status")       private final String status;
-        @JsonProperty("head_sha")     private final String headSha;
-        @JsonProperty("duration_ms")  private final Integer durationMs;
+        @JsonProperty("run_id")
+        private final Long runId;
+        @JsonProperty("external_run_id")
+        private final String externalRunId;
+        @JsonProperty("owner")
+        private final String owner;
+        @JsonProperty("repo_name")
+        private final String repoName;
+        @JsonProperty("workflow_name")
+        private final String workflowName;
+        @JsonProperty("branch")
+        private final String branch;
+        @JsonProperty("status")
+        private final String status;
+        @JsonProperty("head_sha")
+        private final String headSha;
+        @JsonProperty("duration_ms")
+        private final Integer durationMs;
     }
 
     @Data

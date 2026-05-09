@@ -1,24 +1,22 @@
 version: "3.9"
 
-# WHY Docker Compose?
-# One command: 'docker compose up' starts PostgreSQL, Redis,
-# the Spring Boot API, and the Python AI service together.
-# No manual startup order, no "forgot to start Redis" errors.
-# This is what interviewers expect to see in a production project.
-
 services:
 
   postgres:
     image: postgres:15
     container_name: cicd-postgres
+
     environment:
       POSTGRES_DB: cicd
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+
     ports:
-      - "5433:5432"
+      - "5434:5432"
+
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d cicd"]
       interval: 10s
@@ -28,8 +26,10 @@ services:
   redis:
     image: redis:7
     container_name: cicd-redis
+
     ports:
-      - "6379:6379"
+      - "6380:6379"
+
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -40,45 +40,57 @@ services:
     build:
       context: ./ai-service
       dockerfile: Dockerfile
+
     container_name: cicd-ai-service
+
     ports:
       - "8000:8000"
+
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-llama-3.1-8b-instant}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.groq.com/openai/v1}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - LOG_LEVEL=INFO
+
     depends_on:
-      - postgres
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
+      postgres:
+        condition: service_healthy
+
+    # Removed curl-based healthcheck
+    # because python slim image does not include curl
 
   api-service:
     build:
       context: ./backend
       dockerfile: api-service/Dockerfile
+
     container_name: cicd-api-service
+
     ports:
       - "8081:8081"
+
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/cicd
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=postgres
+
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PORT=6379
+
       - GITHUB_TOKEN=${GITHUB_TOKEN}
+
       - AI_SERVICE_URL=http://ai-service:8000
+
     depends_on:
       postgres:
         condition: service_healthy
+
       redis:
         condition: service_healthy
+
       ai-service:
-        condition: service_healthy
+        condition: service_started
 
 volumes:
   postgres_data:
