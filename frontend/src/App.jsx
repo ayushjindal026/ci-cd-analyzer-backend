@@ -1,91 +1,45 @@
-import {
-  BrowserRouter,
-  Routes,
-  Route,
-  Navigate,
-} from 'react-router-dom'
-
-import {
-  AuthProvider,
-  useAuth,
-} from '@/context/AuthContext'
-
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { ThemeProvider } from '@/context/ThemeContext'
-
 import { Layout } from '@/components/layout/Layout'
+import { FullPageSpinner } from '@/components/ui/Spinner'
 
-import { FullPageSpinner } from '@/components/ui'
-
+// Pages
 import { Login } from '@/pages/Login'
-
-import { OAuthSuccess } from '@/pages/OAuthSuccess'
-
+import OAuthSuccess from '@/pages/OAuthSuccess'
 import Dashboard from '@/pages/Dashboard'
 import Pipelines from '@/pages/Pipelines'
 import Runs from '@/pages/Runs'
 import Insights from '@/pages/Insights'
 import Settings from '@/pages/Settings'
+import NotFound from '@/pages/NotFound'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Protected route wrapper
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ── Guards ────────────────────────────────────────────────────────────────────
 function ProtectedRoute({ children }) {
-
   const { user, loading } = useAuth()
-
-  // Wait until auth check finishes
-  if (loading) {
-
-    return <FullPageSpinner />
-  }
-
-  // Not authenticated
-  if (!user) {
-
-    return <Navigate to="/login" replace />
-  }
-
-  // Authenticated
+  if (loading) return <FullPageSpinner />
+  if (!user) return <Navigate to="/login" replace />
   return children
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// App routes
-// ─────────────────────────────────────────────────────────────────────────────
-
-function AppRoutes() {
-
+function PublicRoute({ children }) {
   const { user, loading } = useAuth()
+  if (loading) return <FullPageSpinner />
+  if (user) return <Navigate to="/" replace />
+  return children
+}
 
-  // Initial auth loading
-  if (loading) {
-
-    return <FullPageSpinner />
-  }
-
+// ── Routes ────────────────────────────────────────────────────────────────────
+function AppRoutes() {
   return (
-
     <Routes>
+      {/* Public — redirect to / if already authed */}
+      <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
 
-      {/* ── Public routes ───────────────────────────────────── */}
+      {/* OAuth callback — always public, handles its own redirect */}
+      <Route path="/oauth-success" element={<OAuthSuccess />} />
 
-      <Route
-        path="/login"
-        element={
-          user
-            ? <Navigate to="/" replace />
-            : <Login />
-        }
-      />
-
-      <Route
-        path="/oauth-success"
-        element={<OAuthSuccess />}
-      />
-
-      {/* ── Protected routes ───────────────────────────────── */}
-
+      {/* Protected shell */}
       <Route
         element={
           <ProtectedRoute>
@@ -93,65 +47,28 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-
-        <Route
-          path="/"
-          element={<Dashboard />}
-        />
-
-        <Route
-          path="/repos"
-          element={<Pipelines />}
-        />
-
-        <Route
-          path="/runs"
-          element={<Runs />}
-        />
-
-        <Route
-          path="/insights"
-          element={<Insights />}
-        />
-
-        <Route
-          path="/settings"
-          element={<Settings />}
-        />
-
+        <Route index element={<Dashboard />} />
+        <Route path="repos" element={<Pipelines />} />
+        <Route path="runs" element={<Runs />} />
+        <Route path="insights" element={<Insights />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
 
-      {/* ── Fallback ───────────────────────────────────────── */}
-
-      <Route
-        path="*"
-        element={<Navigate to="/" replace />}
-      />
-
+      {/* 404 */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Root app
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ── Root ──────────────────────────────────────────────────────────────────────
 export default function App() {
-
   return (
-
     <ThemeProvider>
-
       <AuthProvider>
-
         <BrowserRouter>
-
           <AppRoutes />
-
         </BrowserRouter>
-
       </AuthProvider>
-
     </ThemeProvider>
   )
 }

@@ -1,5 +1,6 @@
-// ─── src/components/ui/index.js ───────────────────────────────────────────────
-// Barrel export so pages can do: import { Spinner, ErrorBanner } from '@/components/ui'
+// ═══════════════════════════════════════════════════════════════════════════════
+// src/components/ui/index.js  — barrel export
+// ═══════════════════════════════════════════════════════════════════════════════
 export { Spinner, FullPageSpinner } from './Spinner'
 export { Badge } from './Badge'
 export { StatCard } from './StatCard'

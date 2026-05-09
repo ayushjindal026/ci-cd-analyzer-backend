@@ -1,106 +1,60 @@
-import {
-    createContext,
-    useContext,
-    useEffect,
-    useState,
-    useCallback,
-} from 'react'
-
-import { authApi } from '@/api/client'
+import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import axios from 'axios'
 
 const AuthContext = createContext(null)
 
+const authHttp = axios.create({ baseURL: '/api/v1', timeout: 10_000 })
+
+// ── Token helpers ─────────────────────────────────────────────────────────────
+export const tokenStorage = {
+    get: () => localStorage.getItem('piq_token'),
+    set: token => localStorage.setItem('piq_token', token),
+    clear: () => localStorage.removeItem('piq_token'),
+}
+
+// ── Inject JWT into every request ─────────────────────────────────────────────
+authHttp.interceptors.request.use(cfg => {
+    const token = tokenStorage.get()
+    if (token) cfg.headers['Authorization'] = `Bearer ${token}`
+    return cfg
+})
+
 export function AuthProvider({ children }) {
-
     const [user, setUser] = useState(null)
-
     const [loading, setLoading] = useState(true)
 
     const loadUser = useCallback(async () => {
-
-        const token =
-            localStorage.getItem('token')
-
-        if (!token) {
-
-            setLoading(false)
-
-            return
-        }
-
+        const token = tokenStorage.get()
+        if (!token) { setLoading(false); return }
         try {
-
-            const res =
-                await authApi.me()
-
-            setUser(res.data.data || res.data)
-
-        } catch (error) {
-
-            console.error(error)
-
+            const res = await authHttp.get('/auth/me')
+            setUser(res.data)
+        } catch {
+            tokenStorage.clear()
             setUser(null)
-
         } finally {
-
             setLoading(false)
         }
-
     }, [])
 
-    useEffect(() => {
-
-        const token =
-            localStorage.getItem('token')
-
-        if (token) {
-
-            loadUser()
-
-        } else {
-
-            setLoading(false)
-        }
-
-    }, [loadUser])
+    useEffect(() => { loadUser() }, [loadUser])
 
     const logout = () => {
-
-        localStorage.removeItem('token')
-
+        tokenStorage.clear()
         setUser(null)
-
-        window.location.href = '/login' 
+        window.location.href = '/login'
     }
 
     return (
-
-        <AuthContext.Provider
-            value={{
-                user,
-                loading,
-                logout,
-                reload: loadUser,
-            }}
-        >
-
+        <AuthContext.Provider value={{ user, loading, logout, reload: loadUser }}>
             {children}
-
         </AuthContext.Provider>
     )
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => {
-
     const ctx = useContext(AuthContext)
-
-    if (!ctx) {
-
-        throw new Error(
-            'useAuth must be used within AuthProvider'
-        )
-    }
-
+    if (!ctx) throw new Error('useAuth must be used within AuthProvider')
     return ctx
 }

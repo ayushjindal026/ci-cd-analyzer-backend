@@ -1,280 +1,88 @@
 import axios from 'axios'
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AXIOS INSTANCE
-// ─────────────────────────────────────────────────────────────────────────────
+import { tokenStorage } from '@/context/AuthContext'
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL
-    || 'http://localhost:8081/api/v1',
-
-  headers: {
-    'Content-Type': 'application/json',
-  },
-
-  timeout: 20000,
+  baseURL: '/api/v1',
+  timeout: 20_000,
+  headers: { 'Content-Type': 'application/json' },
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
-// REQUEST INTERCEPTOR
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Inject JWT on every request ───────────────────────────────────────────────
+api.interceptors.request.use(cfg => {
+  const token = tokenStorage.get()
+  if (token) cfg.headers['Authorization'] = `Bearer ${token}`
+  return cfg
+}, err => Promise.reject(err))
 
-api.interceptors.request.use(
-  config => {
-
-    const accessToken =
-      localStorage.getItem('token')
-
-    if (accessToken) {
-
-      config.headers.Authorization =
-        `Bearer ${accessToken}`
-    }
-
-    return config
-  },
-
-  error => Promise.reject(error)
-)
-
-// ─────────────────────────────────────────────────────────────────────────────
-// RESPONSE INTERCEPTOR
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ── 401 → clear token + redirect to login ────────────────────────────────────
 api.interceptors.response.use(
-
-  response => {
-
-    // DEV RESPONSE LOGGING
-    if (import.meta.env.DEV) {
-      console.log(
-        `✅ ${response.status} ${response.config.url}`
-      )
+  res => res,
+  err => {
+    if (err.response?.status === 401) {
+      tokenStorage.clear()
+      window.location.href = '/login'
     }
-
-    return response
-  },
-
-  error => {
-
-    const status = error.response?.status
-
-    // NETWORK ERROR
-    if (!error.response) {
-
-      console.error('🌐 Network error or backend unreachable')
-
-      return Promise.reject({
-        message: 'Backend server unreachable',
-      })
-    }
-
-    // AUTHORIZATION ERRORS
-    if (status === 401) {
-
-      console.warn('🔒 Unauthorized request')
-    }
-
-    // FORBIDDEN
-    if (status === 403) {
-
-      console.warn('⛔ Forbidden request')
-    }
-
-    // NOT FOUND
-    if (status === 404) {
-
-      console.warn('📭 Resource not found')
-    }
-
-    // SERVER ERROR
-    if (status >= 500) {
-
-      console.error('💥 Internal server error')
-    }
-
-    return Promise.reject(error)
+    return Promise.reject(err)
   }
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AUTH API
+// AUTH
 // ─────────────────────────────────────────────────────────────────────────────
-
 export const authApi = {
-
-  me: () =>
-    api.get('/auth/me'),
-
-  logout: () =>
-    api.post('/auth/logout'),
+  me: () => api.get('/auth/me'),
+  logout: () => api.post('/auth/logout').catch(() => { }),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// REPOSITORY API
+// REPOSITORIES
+//   GET    /api/v1/repositories
+//   POST   /api/v1/repositories
+//   GET    /api/v1/repositories/{id}
+//   DELETE /api/v1/repositories/{id}
+//   POST   /api/v1/repositories/{id}/sync
+//   GET    /api/v1/repositories/{id}/runs
+//   GET    /api/v1/repositories/{id}/metrics
 // ─────────────────────────────────────────────────────────────────────────────
-
 export const repoApi = {
-
-  list: () =>
-    api.get('/repositories'),
-
-  get: id =>
-    api.get(`/repositories/${id}`),
-
-  add: data =>
-    api.post('/repositories', data),
-
-  update: (id, data) =>
-    api.put(`/repositories/${id}`, data),
-
-  remove: id =>
-    api.delete(`/repositories/${id}`),
-
-  sync: id =>
-    api.post(`/repositories/${id}/sync`),
-
-  branches: id =>
-    api.get(`/repositories/${id}/branches`),
-
-  workflows: id =>
-    api.get(`/repositories/${id}/workflows`),
+  list: () => api.get('/repositories'),
+  get: id => api.get(`/repositories/${id}`),
+  add: data => api.post('/repositories', data),
+  remove: id => api.delete(`/repositories/${id}`),
+  sync: id => api.post(`/repositories/${id}/sync`),
+  runs: (id, p) => api.get(`/repositories/${id}/runs`, { params: p }),
+  metrics: id => api.get(`/repositories/${id}/metrics`),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PIPELINE RUNS API
+// RUNS
+//   GET  /api/v1/repositories/{repoId}/runs/{runId}
+//   GET  /api/v1/repositories/{repoId}/runs/{runId}/analysis
+//   POST /api/v1/repositories/{repoId}/runs/{runId}/analyse
 // ─────────────────────────────────────────────────────────────────────────────
-
 export const runApi = {
-
-  list: params =>
-    api.get('/runs', { params }),
-
-  get: id =>
-    api.get(`/runs/${id}`),
-
-  rerun: id =>
-    api.post(`/runs/${id}/rerun`),
-
-  cancel: id =>
-    api.post(`/runs/${id}/cancel`),
-
-  stages: id =>
-    api.get(`/runs/${id}/stages`),
-
-  logs: (id, stageId) =>
-    api.get(`/runs/${id}/stages/${stageId}/logs`),
-
-  artifacts: id =>
-    api.get(`/runs/${id}/artifacts`),
-
-  timeline: id =>
-    api.get(`/runs/${id}/timeline`),
+  repoRuns: (repoId, p) => api.get(`/repositories/${repoId}/runs`, { params: p }),
+  get: (repoId, runId) => api.get(`/repositories/${repoId}/runs/${runId}`),
+  analysis: (repoId, runId) => api.get(`/repositories/${repoId}/runs/${runId}/analysis`),
+  analyse: (repoId, runId) => api.post(`/repositories/${repoId}/runs/${runId}/analyse`),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ANALYTICS API
+// ANALYTICS
+//   GET /api/v1/repositories/{id}/metrics
 // ─────────────────────────────────────────────────────────────────────────────
-
 export const analyticsApi = {
-
-  summary: repoId =>
-    api.get('/analytics/summary', {
-      params: { repoId },
-    }),
-
-  failureRate: repoId =>
-    api.get('/analytics/failure-rate', {
-      params: { repoId },
-    }),
-
-  durations: repoId =>
-    api.get('/analytics/durations', {
-      params: { repoId },
-    }),
-
-  topFailing: repoId =>
-    api.get('/analytics/top-failing', {
-      params: { repoId },
-    }),
-
-  heatmap: repoId =>
-    api.get('/analytics/heatmap', {
-      params: { repoId },
-    }),
-
-  trends: repoId =>
-    api.get('/analytics/trends', {
-      params: { repoId },
-    }),
-
-  deploymentFrequency: repoId =>
-    api.get('/analytics/deployment-frequency', {
-      params: { repoId },
-    }),
-
-  mttr: repoId =>
-    api.get('/analytics/mttr', {
-      params: { repoId },
-    }),
-
-  flakyPipelines: repoId =>
-    api.get('/analytics/flaky-pipelines', {
-      params: { repoId },
-    }),
+  metrics: id => api.get(`/repositories/${id}/metrics`),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AI API
+// AI
+//   POST /api/v1/repositories/{repoId}/runs/{runId}/analyse
+//   GET  /api/v1/repositories/{repoId}/runs/{runId}/analysis
 // ─────────────────────────────────────────────────────────────────────────────
-
 export const aiApi = {
-
-  diagnose: runId =>
-    api.post(`/ai/diagnose/${runId}`),
-
-  insights: repoId =>
-    api.get('/ai/insights', {
-      params: { repoId },
-    }),
-
-  predictScore: repoId =>
-    api.get('/ai/predict', {
-      params: { repoId },
-    }),
-
-  generateSummary: runId =>
-    api.post(`/ai/generate-summary/${runId}`),
-
-  rootCause: runId =>
-    api.post(`/ai/root-cause/${runId}`),
-
-  optimizationTips: repoId =>
-    api.get('/ai/optimization-tips', {
-      params: { repoId },
-    }),
-
-  anomalyDetection: repoId =>
-    api.get('/ai/anomaly-detection', {
-      params: { repoId },
-    }),
+  trigger: (repoId, runId) => api.post(`/repositories/${repoId}/runs/${runId}/analyse`),
+  getAnalysis: (repoId, runId) => api.get(`/repositories/${repoId}/runs/${runId}/analysis`),
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// HEALTH API
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const healthApi = {
-
-  status: () =>
-    api.get('/health'),
-
-  metrics: () =>
-    api.get('/actuator/metrics'),
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// EXPORT
-// ─────────────────────────────────────────────────────────────────────────────
 
 export default api

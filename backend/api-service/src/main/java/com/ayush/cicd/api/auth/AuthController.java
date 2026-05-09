@@ -121,9 +121,16 @@ public class AuthController {
                                     "Unauthorized"));
         }
 
+        User user = (User) authentication.getPrincipal();
+
         return ResponseEntity.ok(
                 ApiResponse.success(
-                        authentication.getPrincipal(),
+                        AuthResponse.builder()
+                                .userId(user.getId())
+                                .username(user.getEmail())
+                                .avatarUrl(user.getAvatarUrl())
+                                .email(user.getEmail())
+                                .build(),
                         "Current authenticated user"));
     }
 

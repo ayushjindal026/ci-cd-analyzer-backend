@@ -5,17 +5,16 @@ import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 import { useLocation } from 'react-router-dom'
 
-const PAGE_TITLES = {
-    '/': 'Dashboard',
-    '/repos': 'Repositories',
-    '/runs': 'Pipeline Runs',
-    '/insights': 'AI Insights',
-    '/settings': 'Settings',
-}
-
 export function Layout() {
     const [collapsed, setCollapsed] = useState(false)
     const { pathname } = useLocation()
+    const PAGE_TITLES = {
+        '/': 'Dashboard',
+        '/repos': 'Repositories',
+        '/runs': 'Pipeline Runs',
+        '/insights': 'AI Insights',
+        '/settings': 'Settings',
+    }
     const title = PAGE_TITLES[pathname] ?? 'PipelineIQ'
 
     return (
