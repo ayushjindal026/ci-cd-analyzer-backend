@@ -1,11 +1,8 @@
-// ═══════════════════════════════════════════════════════════════════════════════
-// src/components/layout/Sidebar.jsx
-// ═══════════════════════════════════════════════════════════════════════════════
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import {
     LayoutDashboard, GitBranch, Play, Sparkles,
-    Settings, LogOut, ChevronRight, Activity
+    Settings, LogOut, ChevronRight, Activity,
 } from 'lucide-react'
 
 const NAV = [
@@ -19,33 +16,43 @@ const NAV = [
 export function Sidebar({ collapsed, onToggle }) {
     const { user, logout } = useAuth()
 
+    // Build a safe avatar URL — handles all field names Spring might return
+    const avatarUrl =
+        user?.avatarUrl ??
+        user?.avatar_url ??
+        user?.githubAvatarUrl ??
+        `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.login ?? user?.name ?? 'U')}&background=4f46e5&color=fff&bold=true`
+
+    const displayName = user?.name ?? user?.login ?? 'User'
+    const handle = user?.login ? `@${user.login}` : user?.email ?? 'GitHub'
+
     return (
         <aside className={`
-      relative h-full flex flex-col
+      relative h-full flex flex-col select-none
       bg-white dark:bg-gray-900
       border-r border-gray-200 dark:border-gray-800
-      transition-all duration-200 ease-in-out select-none
+      transition-all duration-200 ease-in-out
       ${collapsed ? 'w-16' : 'w-56'}
     `}>
 
             {/* Logo */}
             <div className={`
-        flex items-center h-16 px-4 flex-shrink-0
+        flex items-center h-16 flex-shrink-0
         border-b border-gray-200 dark:border-gray-800
-        ${collapsed ? 'justify-center px-0' : 'gap-3'}
+        ${collapsed ? 'justify-center px-0' : 'gap-3 px-4'}
       `}>
                 <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center shadow-sm">
                     <Activity size={16} className="text-white" />
                 </div>
                 {!collapsed && (
-                    <div>
+                    <div className="min-w-0">
                         <p className="font-bold text-gray-900 dark:text-white text-sm leading-none">PipelineIQ</p>
-                        <p className="text-[10px] text-gray-400 mt-0.5">CI/CD Analyzer</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5 tracking-wide">CI/CD Analyzer</p>
                     </div>
                 )}
             </div>
 
-            {/* Nav */}
+            {/* Nav links */}
             <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto overflow-x-hidden">
                 {NAV.map(({ to, icon: Icon, label }) => (
                     <NavLink
@@ -63,51 +70,50 @@ export function Sidebar({ collapsed, onToggle }) {
                 ))}
             </nav>
 
-            {/* User footer */}
+            {/* User + logout */}
             <div className="p-2 space-y-1 border-t border-gray-200 dark:border-gray-800 flex-shrink-0">
                 {user && (
-                    <div className={`flex items-center gap-2 px-2 py-1.5 rounded-lg ${collapsed ? 'justify-center' : ''}`}>
+                    <div className={`flex items-center gap-2.5 px-2 py-2 rounded-lg ${collapsed ? 'justify-center' : ''}`}>
                         <img
-                            src={
-                                user.avatarUrl ??
-                                user.avatar_url ??
-                                `https://ui-avatars.com/api/?name=${user.login ?? user.name}&background=4f46e5&color=fff`
-                            }
-                            alt={user.login ?? 'user'}
+                            src={avatarUrl}
+                            alt={displayName}
+                            onError={e => {
+                                e.target.onerror = null
+                                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=4f46e5&color=fff`
+                            }}
                             className="w-7 h-7 rounded-full flex-shrink-0 ring-2 ring-brand-200 dark:ring-brand-800"
                         />
                         {!collapsed && (
                             <div className="min-w-0">
-                                <p className="text-xs font-semibold text-gray-900 dark:text-gray-100 truncate">
-                                    {user.name ?? user.login ?? 'User'}
+                                <p className="text-xs font-semibold text-gray-900 dark:text-gray-100 truncate leading-tight">
+                                    {displayName}
                                 </p>
-                                <p className="text-[10px] text-gray-400 truncate">
-                                    {user.email ?? `@${user.login ?? 'github'}`}
-                                </p>
+                                <p className="text-[10px] text-gray-400 truncate">{handle}</p>
                             </div>
                         )}
                     </div>
                 )}
+
                 <button
                     onClick={logout}
                     title={collapsed ? 'Sign out' : undefined}
-                    className={`nav-item w-full text-gray-400 hover:text-red-500 dark:hover:text-red-400 ${collapsed ? 'justify-center px-2' : ''}`}
+                    className={`nav-item w-full hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 ${collapsed ? 'justify-center px-2' : ''}`}
                 >
-                    <LogOut size={15} className="flex-shrink-0" />
-                    {!collapsed && <span>Sign out</span>}
+                    <LogOut size={15} className="flex-shrink-0 text-gray-400" />
+                    {!collapsed && <span className="text-gray-500 dark:text-gray-400 text-xs">Sign out</span>}
                 </button>
             </div>
 
             {/* Collapse toggle */}
             <button
                 onClick={onToggle}
+                aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 className="
-          absolute -right-3 top-[4.5rem]
-          w-6 h-6 rounded-full
+          absolute -right-3 top-[4.75rem] z-20
+          w-6 h-6 rounded-full flex items-center justify-center
           bg-white dark:bg-gray-800
           border border-gray-200 dark:border-gray-700
-          flex items-center justify-center
-          shadow-sm hover:shadow-md transition-all z-20
+          shadow-sm hover:shadow-md transition-all
         "
             >
                 <ChevronRight

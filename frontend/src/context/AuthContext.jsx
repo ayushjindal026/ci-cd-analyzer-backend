@@ -24,17 +24,42 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true)
 
     const loadUser = useCallback(async () => {
+
         const token = tokenStorage.get()
-        if (!token) { setLoading(false); return }
-        try {
-            const res = await authHttp.get('/auth/me')
-            setUser(res.data)
-        } catch {
-            tokenStorage.clear()
+
+        if (!token) {
             setUser(null)
+            setLoading(false)
+            return
+        }
+
+        try {
+
+            const res = await authHttp.get('/auth/me')
+
+            const userData = res.data.data || res.data
+
+            console.log('AUTH USER:', userData)
+
+            setUser(userData)
+
+        } catch (error) {
+
+            const msg = error?.response?.data?.message || ''
+
+            if (
+                error?.response?.status === 401 ||
+                msg.toLowerCase().includes('jwt expired')
+            ) {
+
+                tokenStorage.clear()
+                setUser(null)
+            }
+
         } finally {
             setLoading(false)
         }
+
     }, [])
 
     useEffect(() => { loadUser() }, [loadUser])

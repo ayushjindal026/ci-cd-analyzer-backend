@@ -1,6 +1,6 @@
-// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // src/hooks/useRepositories.js
-// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 import { useState, useEffect, useCallback } from 'react'
 import { repoApi } from '@/api/client'
 
@@ -10,9 +10,9 @@ export function useRepositories() {
   const [error, setError] = useState(null)
 
   const fetch = useCallback(() => {
-    setLoading(true)
+    setLoading(true); setError(null)
     repoApi.list()
-      .then(r => { setRepos(r.data ?? []); setError(null) })
+      .then(r => setRepos(Array.isArray(r.data) ? r.data : r.data?.content ?? []))
       .catch(e => setError(e.response?.data?.message ?? 'Failed to load repositories'))
       .finally(() => setLoading(false))
   }, [])
@@ -20,7 +20,6 @@ export function useRepositories() {
   useEffect(() => { fetch() }, [fetch])
 
   const addRepo = async ({ repoUrl }) => {
-    // Spring backend expects { repoUrl } — matches your POST /api/v1/repositories
     const res = await repoApi.add({ repoUrl })
     setRepos(prev => [...prev, res.data])
     return res.data
@@ -32,9 +31,13 @@ export function useRepositories() {
   }
 
   const syncRepo = async id => {
-    await repoApi.sync(id)
-    // re-fetch to get updated run counts / status
-    fetch()
+    const res = await repoApi.sync(id)
+    // update single repo in state if backend returns updated object
+    if (res?.data?.id) {
+      setRepos(prev => prev.map(r => r.id === id ? { ...r, ...res.data } : r))
+    } else {
+      fetch()
+    }
   }
 
   return { repos, loading, error, refetch: fetch, addRepo, removeRepo, syncRepo }

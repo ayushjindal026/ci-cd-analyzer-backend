@@ -5,10 +5,18 @@
 .env
 .env.*
 !.env.example
+.env.local
+.env.production
 
 ai-service/.env
 backend/.env
 frontend/.env
+
+frontend/dist
+frontend/node_modules
+backend/build
+backend/.gradle
+postgres_data
 
 # ─────────────────────────────────────────────────────────────
 # PYTHON

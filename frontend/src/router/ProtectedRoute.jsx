@@ -1,25 +1,20 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// src/router/ProtectedRoute.jsx
+// ═══════════════════════════════════════════════════════════════════════════════
 import { Navigate } from 'react-router-dom'
+import { useAuth }  from '@/context/AuthContext'
+import { FullPageSpinner } from '@/components/ui/Spinner'
 
-import { useAuth } from '@/context/AuthContext'
-
-import { FullPageSpinner } from '@/components/ui'
-
-export default function ProtectedRoute({ children }) {
-
+export function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
+  if (loading) return <FullPageSpinner />
+  if (!user)   return <Navigate to="/login" replace />
+  return children
+}
 
-  // Wait until auth check finishes
-  if (loading) {
-
-    return <FullPageSpinner />
-  }
-
-  // Not authenticated
-  if (!user) {
-
-    return <Navigate to="/login" replace />
-  }
-
-  // Authenticated
+export function PublicRoute({ children }) {
+  const { user, loading } = useAuth()
+  if (loading) return <FullPageSpinner />
+  if (user)    return <Navigate to="/" replace />
   return children
 }
