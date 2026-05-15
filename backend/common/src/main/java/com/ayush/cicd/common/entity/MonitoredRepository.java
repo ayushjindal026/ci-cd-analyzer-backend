@@ -1,7 +1,7 @@
 package com.ayush.cicd.common.entity;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.ayush.cicd.common.enums.PipelineSource;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -10,22 +10,24 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * A CI/CD repository being monitored by this system.
+ * A CI/CD repository monitored by PipelineIQ.
  *
- * WHY a separate entity, not just a column on PipelineRun?
- * - lastSyncedAt lives here — needed for incremental syncs
- * (only fetch runs newer than this timestamp, not all history)
- * - Alert thresholds are configured per-repo
- * - One repo has thousands of runs. Normalizing avoids repeating
- * owner/repoName on every single run row in the DB.
+ * Supports:
+ * - GitHub Actions
+ * - Jenkins
+ * - future GitLab CI
  *
- * WHY table name 'monitored_repositories' not 'repository'?
- * 'repository' is a reserved keyword in some SQL dialects.
- * Always use explicit table names to avoid Hibernate generating bad SQL.
+ * WHY normalized?
+ * One repository can contain thousands of pipeline runs.
+ * Repository metadata should not be duplicated on every run.
  */
 @Entity
 @Table(name = "monitored_repositories", uniqueConstraints = {
         @UniqueConstraint(name = "uq_repo_owner_name_source", columnNames = { "owner", "repo_name", "source" })
+}, indexes = {
+        @Index(name = "idx_repo_owner", columnList = "owner"),
+        @Index(name = "idx_repo_name", columnList = "repo_name"),
+        @Index(name = "idx_repo_active", columnList = "is_active")
 })
 @Getter
 @Setter
@@ -38,17 +40,37 @@ public class MonitoredRepository extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * GitHub/Jenkins organization or username.
+     * Example:
+     * - ayush
+     * - netflix
+     * - apache
+     */
     @Column(name = "owner", nullable = false, length = 100)
     private String owner;
 
+    /**
+     * Repository name only.
+     * Example:
+     * - cicd-analyzer
+     * - spring-framework
+     */
     @Column(name = "repo_name", nullable = false, length = 100)
     private String repoName;
 
     /**
-     * WHY EnumType.STRING not ORDINAL (the default)?
-     * ORDINAL stores 0, 1, 2... If you ever reorder enum values,
-     * all existing DB rows become silently wrong.
-     * STRING stores "GITHUB_ACTIONS" — safe to reorder and human-readable.
+     * Convenience derived property:
+     * Example:
+     * ayush/cicd-analyzer
+     */
+    @Transient
+    public String getFullName() {
+        return owner + "/" + repoName;
+    }
+
+    /**
+     * GitHub / Jenkins / GitLab
      */
     @Enumerated(EnumType.STRING)
     @Column(name = "source", nullable = false, length = 30)
@@ -58,37 +80,84 @@ public class MonitoredRepository extends BaseEntity {
     @Builder.Default
     private String defaultBranch = "main";
 
+    /**
+     * Main language detected from GitHub.
+     */
+    @Column(name = "language", length = 50)
+    private String language;
+
+    /**
+     * OAuth / PAT token.
+     * Encrypted later in production.
+     */
+    @Column(name = "access_token", length = 500)
+    private String accessToken;
+
+    /**
+     * GitHub webhook ID.
+     */
+    @Column(name = "webhook_id")
+    private Long webhookId;
+
+    /**
+     * Last successful sync time.
+     */
     @Column(name = "last_synced_at")
     private Instant lastSyncedAt;
 
+    /**
+     * Cached analytics for dashboard speed.
+     */
+    @Column(name = "total_runs")
+    @Builder.Default
+    private int totalRuns = 0;
+
+    @Column(name = "success_rate")
+    @Builder.Default
+    private int successRate = 0;
+
+    @Column(name = "last_run_status", length = 20)
+    private String lastRunStatus;
+
+    @Column(name = "last_run_at")
+    private Instant lastRunAt;
+
+    /**
+     * Soft-delete support.
+     */
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     private boolean active = true;
+
     /**
-     * The user who added this repository.
-     * WHY nullable = true?
-     * Existing seeded rows don't have a user. All new rows
-     * created through the API will have user enforced at
-     * the service layer. We add NOT NULL in a future migration
-     * once all existing rows are cleaned up.
+     * User who added this repository.
      */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = true)
+    @JoinColumn(name = "user_id")
     @JsonIgnore
     private User user;
 
     /**
-     * WHY FetchType.LAZY?
-     * A repo can have thousands of runs. EAGER would load all of them
-     * every single time you load a repo — catastrophic for any list endpoint.
-     * LAZY loads runs only when you explicitly call getRuns().
-     *
-     * WHY cascade PERSIST and MERGE but NOT REMOVE?
-     * If a repo is deleted, we want to KEEP the historical run data
-     * for analytics. We soft-delete repos (active = false) instead of
-     * hard-deleting them. Runs are never orphaned.
+     * Pipeline runs for this repository.
      */
     @OneToMany(mappedBy = "repository", cascade = { CascadeType.PERSIST, CascadeType.MERGE }, fetch = FetchType.LAZY)
+    @JsonIgnore
     @Builder.Default
     private List<PipelineRun> runs = new ArrayList<>();
+
+    /**
+     * Helper for UI.
+     */
+    @Transient
+    public boolean isGithub() {
+        return source == PipelineSource.GITHUB_ACTIONS;
+    }
+
+    /**
+     * Helper for UI.
+     */
+    @Transient
+    public boolean isJenkins() {
+        return source == PipelineSource.JENKINS;
+    }
 }

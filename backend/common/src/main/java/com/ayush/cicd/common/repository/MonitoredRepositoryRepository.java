@@ -22,15 +22,66 @@ import java.util.Optional;
  * common has no upstream dependencies, so everything can depend on it safely.
  */
 @Repository
-public interface MonitoredRepositoryRepository extends JpaRepository<MonitoredRepository, Long> {
+public interface MonitoredRepositoryRepository
+                extends JpaRepository<MonitoredRepository, Long> {
 
+        /**
+         * Find repository by owner + repo name + source.
+         */
         Optional<MonitoredRepository> findByOwnerAndRepoNameAndSource(
-                        String owner, String repoName, PipelineSource source);
+                        String owner,
+                        String repoName,
+                        PipelineSource source);
 
+        /**
+         * Get all active repositories.
+         */
         List<MonitoredRepository> findByActiveTrue();
 
+        /**
+         * Get all active repositories for a user.
+         */
         List<MonitoredRepository> findByActiveTrueAndUser(User user);
 
+        /**
+         * Check repository existence for a user.
+         */
         boolean existsByOwnerAndRepoNameAndSourceAndUser(
-                        String owner, String repoName, PipelineSource source, User user);
+                        String owner,
+                        String repoName,
+                        PipelineSource source,
+                        User user);
+
+        /**
+         * Get repositories by user ID.
+         *
+         * IMPORTANT:
+         * Use User_Id because entity contains:
+         *
+         * private User user;
+         */
+        List<MonitoredRepository> findByUser_Id(Long userId);
+
+        /**
+         * Find repository by owner + repo name.
+         */
+        Optional<MonitoredRepository> findByOwnerAndRepoName(
+                        String owner,
+                        String repoName);
+
+        /**
+         * Find repository by owner + repo name + user ID.
+         */
+        Optional<MonitoredRepository> findByOwnerAndRepoNameAndUser_Id(
+                        String owner,
+                        String repoName,
+                        Long userId);
+
+        /**
+         * Check repository existence by owner + repo name + user ID.
+         */
+        boolean existsByOwnerAndRepoNameAndUser_Id(
+                        String owner,
+                        String repoName,
+                        Long userId);
 }

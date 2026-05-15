@@ -1,8 +1,9 @@
+// PATH: backend/api-service/src/main/java/com/ayush/cicd/api/security/JwtAuthenticationFilter.java
+
 package com.ayush.cicd.api.security;
 
 import com.ayush.cicd.common.entity.User;
 import com.ayush.cicd.common.repository.UserRepository;
-import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,39 +16,50 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Optional;
 
 /**
- * Intercepts every HTTP request and validates the JWT token.
+ * JWT authentication filter.
  *
- * WHY OncePerRequestFilter?
- * Guarantees this filter runs exactly once per request,
- * even in async dispatch scenarios. Never processes the
- * same request twice.
+ * RESPONSIBILITIES:
+ * - Extract Bearer token
+ * - Validate JWT signature + expiry
+ * - Load authenticated user
+ * - Populate Spring SecurityContext
  *
- * WHY not use Spring Security's built-in OAuth2 resource server?
- * That requires a JWK endpoint or JWKS URI — adds infrastructure
- * complexity. For a self-contained app, manual JWT validation
- * is simpler and gives us full control over error handling.
+ * SECURITY MODEL:
+ * Principal = full User entity
  *
- * Flow:
- * 1. Extract Bearer token from Authorization header
- * 2. Validate signature and expiry
- * 3. Load user from DB
- * 4. Set authentication in SecurityContext
- * 5. Continue filter chain
+ * WHY?
+ * Allows:
+ * 
+ * @AuthenticationPrincipal User currentUser
+ *
+ *                          avoiding repeated DB lookups in
+ *                          controllers/services.
+ *
+ *                          PERFORMANCE:
+ *                          One DB lookup per request.
+ *
+ *                          FUTURE IMPROVEMENT:
+ *                          Add short-lived Caffeine cache for user lookups.
  */
-@Component
 @Slf4j
+@Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+
     private final UserRepository userRepository;
+
+    // ------------------------------------------------------------------------
+    // Filter Logic
+    // ------------------------------------------------------------------------
 
     @Override
     protected void doFilterInternal(
@@ -55,57 +67,129 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain) throws ServletException, IOException {
 
-        String path = request.getServletPath();
+        String requestPath = request.getServletPath();
 
-        // Skip Swagger endpoints
-        if (path.startsWith("/swagger-ui")
-                || path.startsWith("/v3/api-docs")
-                || path.startsWith("/webjars")) {
+        // --------------------------------------------------------------------
+        // Skip Swagger/OpenAPI endpoints
+        // --------------------------------------------------------------------
+
+        if (isSwaggerRequest(requestPath)) {
 
             filterChain.doFilter(request, response);
+
             return;
         }
 
-        final String authHeader = request.getHeader("Authorization");
+        // --------------------------------------------------------------------
+        // Extract Bearer token
+        // --------------------------------------------------------------------
 
-        // No token — let the request through (public endpoints handle this)
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        String token = extractToken(request);
+
+        // No token present
+        if (!StringUtils.hasText(token)) {
+
             filterChain.doFilter(request, response);
+
             return;
         }
 
-        final String token = authHeader.substring(7);
+        // --------------------------------------------------------------------
+        // Validate token
+        // --------------------------------------------------------------------
 
         if (!jwtService.isTokenValid(token)) {
+
+            log.debug(
+                    "Invalid JWT token for request: {}",
+                    request.getRequestURI());
+
+            SecurityContextHolder.clearContext();
+
             filterChain.doFilter(request, response);
+
             return;
         }
 
         try {
-            Claims claims = jwtService.validateAndExtractClaims(token);
-            Long userId = Long.parseLong(claims.getSubject());
 
-            // Only set auth if not already authenticated
-            if (SecurityContextHolder.getContext().getAuthentication() == null) {
-                Optional<User> userOpt = userRepository.findById(userId);
+            // ----------------------------------------------------------------
+            // Avoid re-authentication
+            // ----------------------------------------------------------------
 
-                if (userOpt.isPresent()) {
-                    User user = userOpt.get();
-                    UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+            if (SecurityContextHolder
+                    .getContext()
+                    .getAuthentication() == null) {
+
+                Long userId = jwtService.getUserId(token);
+
+                User user = userRepository.findById(userId)
+                        .orElse(null);
+
+                if (user != null) {
+
+                    UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                             user,
                             null,
-                            List.of(new SimpleGrantedAuthority("ROLE_USER")));
-                    authToken.setDetails(
-                            new WebAuthenticationDetailsSource().buildDetails(request));
-                    SecurityContextHolder.getContext().setAuthentication(authToken);
-                    log.debug("Authenticated user: {} for request: {}",
-                            user.getUsername(), request.getRequestURI());
+                            List.of(
+                                    new SimpleGrantedAuthority(
+                                            "ROLE_USER")));
+
+                    authentication.setDetails(
+                            new WebAuthenticationDetailsSource()
+                                    .buildDetails(request));
+
+                    SecurityContextHolder.getContext()
+                            .setAuthentication(authentication);
+
+                    log.debug(
+                            "Authenticated user={} path={}",
+                            user.getUsername(),
+                            request.getRequestURI());
+
+                } else {
+
+                    log.debug(
+                            "JWT valid but user not found. userId={}",
+                            userId);
+
+                    SecurityContextHolder.clearContext();
                 }
             }
+
         } catch (Exception e) {
-            log.error("JWT authentication failed: {}", e.getMessage());
+
+            log.error(
+                    "JWT authentication failed: {}",
+                    e.getMessage());
+
+            SecurityContextHolder.clearContext();
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    // ------------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------------
+
+    private String extractToken(HttpServletRequest request) {
+
+        String authorizationHeader = request.getHeader("Authorization");
+
+        if (StringUtils.hasText(authorizationHeader)
+                && authorizationHeader.startsWith("Bearer ")) {
+
+            return authorizationHeader.substring(7);
+        }
+
+        return null;
+    }
+
+    private boolean isSwaggerRequest(String path) {
+
+        return path.startsWith("/swagger-ui")
+                || path.startsWith("/v3/api-docs")
+                || path.startsWith("/webjars");
     }
 }

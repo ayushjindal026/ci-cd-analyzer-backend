@@ -1,37 +1,48 @@
+// PATH: backend/api-service/src/main/java/com/ayush/cicd/api/auth/GitHubOAuthService.java
+
 package com.ayush.cicd.api.auth;
 
 import com.ayush.cicd.common.entity.User;
 import com.ayush.cicd.common.repository.UserRepository;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 
 /**
- * Handles the GitHub OAuth2 Authorization Code flow.
+ * GitHub OAuth service.
  *
- * Flow:
- * 1. exchangeCodeForToken()  — POST to GitHub with code → get access token
- * 2. fetchGitHubUser()       — GET GitHub user profile with access token
- * 3. upsertUser()            — create or update user in our DB
+ * RESPONSIBILITIES:
+ * - Build GitHub OAuth authorization URL
+ * - Exchange authorization code for GitHub access token
+ * - Fetch GitHub user profile
+ * - Upsert local User entity
  *
- * WHY not use Spring Security OAuth2 Client autoconfiguration?
- * Spring's OAuth2 client is designed for server-side session flows.
- * We need a custom flow: exchange code → get token → issue our OWN JWT.
- * Manual implementation gives us full control over every step.
+ * SECURITY:
+ * - OAuth token exchange happens server-side only
+ * - GitHub access token never exposed publicly
+ * - User profile refreshed on every login
  */
-@Service
 @Slf4j
+@Service
 @RequiredArgsConstructor
 public class GitHubOAuthService {
 
+    private final RestTemplate restTemplate;
+
     private final UserRepository userRepository;
+
+    // ------------------------------------------------------------------------
+    // OAuth Configuration
+    // ------------------------------------------------------------------------
 
     @Value("${github.oauth.client-id}")
     private String clientId;
@@ -39,110 +50,275 @@ public class GitHubOAuthService {
     @Value("${github.oauth.client-secret}")
     private String clientSecret;
 
-    private final WebClient webClient = WebClient.builder().build();
+    @Value("${github.oauth.redirect-uri}")
+    private String redirectUri;
 
-    /**
-     * Exchanges the OAuth authorization code for a GitHub access token.
-     * GitHub's token endpoint returns form-encoded or JSON depending on Accept header.
-     */
-    public String exchangeCodeForToken(String code) {
-        log.debug("Exchanging OAuth code for GitHub access token");
+    // ------------------------------------------------------------------------
+    // GitHub Endpoints
+    // ------------------------------------------------------------------------
 
-        GitHubTokenResponse response = webClient.post()
-                .uri("https://github.com/login/oauth/access_token"
-                        + "?client_id=" + clientId
-                        + "&client_secret=" + clientSecret
-                        + "&code=" + code)
-                .header("Accept", "application/json")
-                .retrieve()
-                .bodyToMono(GitHubTokenResponse.class)
-                .block();
+    private static final String GITHUB_AUTHORIZE_URL =
+            "https://github.com/login/oauth/authorize";
 
-        if (response == null || response.getAccessToken() == null) {
-            throw new RuntimeException("Failed to obtain GitHub access token");
-        }
+    private static final String GITHUB_TOKEN_URL =
+            "https://github.com/login/oauth/access_token";
 
-        if (response.getError() != null) {
-            throw new RuntimeException(
-                    "GitHub OAuth error: " + response.getError()
-                            + " — " + response.getErrorDescription());
-        }
+    private static final String GITHUB_USER_URL =
+            "https://api.github.com/user";
 
-        return response.getAccessToken();
+    // ------------------------------------------------------------------------
+    // Step 1: Authorization URL
+    // ------------------------------------------------------------------------
+
+    public String buildAuthorizationUrl() {
+
+        return GITHUB_AUTHORIZE_URL
+                + "?client_id="
+                + urlEncode(clientId)
+
+                + "&redirect_uri="
+                + urlEncode(redirectUri)
+
+                + "&scope="
+                + urlEncode("read:user user:email");
     }
 
-    /**
-     * Fetches the authenticated user's GitHub profile.
-     */
-    public GitHubUserProfile fetchGitHubUser(String accessToken) {
-        log.debug("Fetching GitHub user profile");
+    // ------------------------------------------------------------------------
+    // Step 2: Handle OAuth Callback
+    // ------------------------------------------------------------------------
+
+    public User handleCallback(String code) {
+
+        // --------------------------------------------------------------------
+        // Exchange code for GitHub access token
+        // --------------------------------------------------------------------
+
+        String githubAccessToken =
+                exchangeCodeForToken(code);
+
+        // --------------------------------------------------------------------
+        // Fetch GitHub profile
+        // --------------------------------------------------------------------
+
+        Map<String, Object> profile =
+                fetchGitHubProfile(githubAccessToken);
+
+        Long githubId =
+                toLong(profile.get("id"));
+
+        if (githubId == null) {
+
+            throw new IllegalStateException(
+                    "GitHub profile missing user id"
+            );
+        }
+
+        String username =
+                (String) profile.get("login");
+
+        String email =
+                (String) profile.get("email");
+
+        String avatarUrl =
+                (String) profile.get("avatar_url");
+
+        // --------------------------------------------------------------------
+        // Fallback email handling
+        // --------------------------------------------------------------------
+
+        if (email == null || email.isBlank()) {
+
+            email = username + "@github.local";
+        }
+
+        log.info(
+                "GitHub OAuth login successful for githubId={} username={}",
+                githubId,
+                username
+        );
+
+        // --------------------------------------------------------------------
+        // Upsert local user
+        // --------------------------------------------------------------------
+
+        User user = userRepository.findByGithubId(githubId)
+                .orElseGet(() ->
+                        User.builder()
+                                .githubId(githubId)
+                                .build()
+                );
+
+        // --------------------------------------------------------------------
+        // Always refresh mutable fields
+        // --------------------------------------------------------------------
+
+        user.setUsername(username);
+        user.setEmail(email);
+        user.setAvatarUrl(avatarUrl);
+
+        /**
+         * NOTE:
+         * Storing raw GitHub tokens is acceptable for MVP.
+         * Encrypt or avoid persistence in production.
+         */
+        user.setGithubToken(githubAccessToken);
+
+        return userRepository.save(user);
+    }
+
+    // ------------------------------------------------------------------------
+    // Exchange OAuth Code
+    // ------------------------------------------------------------------------
+
+    private String exchangeCodeForToken(String code) {
 
         try {
-            return webClient.get()
-                    .uri("https://api.github.com/user")
-                    .header("Authorization", "Bearer " + accessToken)
-                    .header("Accept", "application/vnd.github+json")
-                    .retrieve()
-                    .bodyToMono(GitHubUserProfile.class)
-                    .block();
-        } catch (WebClientResponseException e) {
-            throw new RuntimeException(
-                    "Failed to fetch GitHub user profile: " + e.getMessage());
+
+            HttpHeaders headers = new HttpHeaders();
+
+            headers.setAccept(
+                    List.of(MediaType.APPLICATION_JSON)
+            );
+
+            headers.setContentType(
+                    MediaType.APPLICATION_JSON
+            );
+
+            Map<String, String> requestBody = Map.of(
+                    "client_id", clientId,
+                    "client_secret", clientSecret,
+                    "code", code,
+                    "redirect_uri", redirectUri
+            );
+
+            HttpEntity<Map<String, String>> requestEntity =
+                    new HttpEntity<>(requestBody, headers);
+
+            ResponseEntity<Map> response =
+                    restTemplate.exchange(
+                            GITHUB_TOKEN_URL,
+                            HttpMethod.POST,
+                            requestEntity,
+                            Map.class
+                    );
+
+            Map<?, ?> body = response.getBody();
+
+            if (body == null
+                    || body.get("access_token") == null) {
+
+                throw new IllegalStateException(
+                        "GitHub token exchange failed"
+                );
+            }
+
+            return body.get("access_token").toString();
+
+        } catch (RestClientException e) {
+
+            log.error(
+                    "GitHub token exchange failed",
+                    e
+            );
+
+            throw new IllegalStateException(
+                    "Failed to exchange GitHub OAuth code",
+                    e
+            );
         }
     }
 
-    /**
-     * Creates a new user or updates an existing one.
-     * WHY upsert and not just insert?
-     * Users can log in multiple times. On each login we refresh
-     * their token, avatar, and email in case they changed on GitHub.
-     */
-    @Transactional
-    public User upsertUser(GitHubUserProfile profile, String accessToken) {
-        return userRepository.findByGithubId(profile.getId())
-                .map(existingUser -> {
-                    // Update mutable fields on every login
-                    existingUser.setUsername(profile.getLogin());
-                    existingUser.setEmail(profile.getEmail());
-                    existingUser.setAvatarUrl(profile.getAvatarUrl());
-                    existingUser.setGithubToken(accessToken);
-                    User updated = userRepository.save(existingUser);
-                    log.info("Updated existing user: {}", updated.getUsername());
-                    return updated;
-                })
-                .orElseGet(() -> {
-                    User newUser = User.builder()
-                            .githubId(profile.getId())
-                            .username(profile.getLogin())
-                            .email(profile.getEmail())
-                            .avatarUrl(profile.getAvatarUrl())
-                            .githubToken(accessToken)
-                            .build();
-                    User saved = userRepository.save(newUser);
-                    log.info("Created new user: {}", saved.getUsername());
-                    return saved;
-                });
+    // ------------------------------------------------------------------------
+    // Fetch GitHub Profile
+    // ------------------------------------------------------------------------
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> fetchGitHubProfile(
+            String githubAccessToken
+    ) {
+
+        try {
+
+            HttpHeaders headers = new HttpHeaders();
+
+            headers.setBearerAuth(githubAccessToken);
+
+            headers.setAccept(
+                    List.of(
+                            MediaType.valueOf(
+                                    "application/vnd.github+json"
+                            )
+                    )
+            );
+
+            headers.set(
+                    "X-GitHub-Api-Version",
+                    "2022-11-28"
+            );
+
+            HttpEntity<Void> requestEntity =
+                    new HttpEntity<>(headers);
+
+            ResponseEntity<Map> response =
+                    restTemplate.exchange(
+                            GITHUB_USER_URL,
+                            HttpMethod.GET,
+                            requestEntity,
+                            Map.class
+                    );
+
+            Map<String, Object> profile =
+                    response.getBody();
+
+            if (profile == null) {
+
+                throw new IllegalStateException(
+                        "GitHub profile response is empty"
+                );
+            }
+
+            return profile;
+
+        } catch (RestClientException e) {
+
+            log.error(
+                    "Failed to fetch GitHub user profile",
+                    e
+            );
+
+            throw new IllegalStateException(
+                    "Failed to fetch GitHub profile",
+                    e
+            );
+        }
     }
 
-    // ── GitHub API response DTOs ──────────────────────────────────────────────
+    // ------------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------------
 
-    @Data
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class GitHubTokenResponse {
-        @JsonProperty("access_token")  private String accessToken;
-        @JsonProperty("token_type")    private String tokenType;
-        @JsonProperty("scope")         private String scope;
-        @JsonProperty("error")         private String error;
-        @JsonProperty("error_description") private String errorDescription;
+    private String urlEncode(String value) {
+
+        return URLEncoder.encode(
+                value,
+                StandardCharsets.UTF_8
+        );
     }
 
-    @Data
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class GitHubUserProfile {
-        @JsonProperty("id")         private Long id;
-        @JsonProperty("login")      private String login;
-        @JsonProperty("email")      private String email;
-        @JsonProperty("avatar_url") private String avatarUrl;
-        @JsonProperty("name")       private String name;
+    private Long toLong(Object value) {
+
+        if (value instanceof Integer i) {
+            return i.longValue();
+        }
+
+        if (value instanceof Long l) {
+            return l;
+        }
+
+        if (value instanceof String s) {
+            return Long.parseLong(s);
+        }
+
+        return null;
     }
 }

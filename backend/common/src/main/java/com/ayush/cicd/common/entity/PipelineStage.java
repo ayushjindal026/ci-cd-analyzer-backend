@@ -3,25 +3,22 @@ package com.ayush.cicd.common.entity;
 import com.ayush.cicd.common.enums.BuildStatus;
 import jakarta.persistence.*;
 import lombok.*;
-
 import java.time.Instant;
 
 /**
  * A single stage/step within a pipeline run.
  *
  * WHY a separate table and not a JSON column on PipelineRun?
- * We query stages independently: "which stage fails most often across all runs?"
+ * We query stages independently: "which stage fails most often across all
+ * runs?"
  * A JSON column cannot be indexed or aggregated in SQL.
  * Proper normalization = proper analytics.
  */
 @Entity
-@Table(
-    name = "pipeline_stages",
-    indexes = {
-        @Index(name = "idx_stages_run_id",     columnList = "pipeline_run_id"),
+@Table(name = "pipeline_stages", indexes = {
+        @Index(name = "idx_stages_run_id", columnList = "pipeline_run_id"),
         @Index(name = "idx_stages_name_status", columnList = "stage_name, status")
-    }
-)
+})
 @Getter
 @Setter
 @Builder

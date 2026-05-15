@@ -1,55 +1,86 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PATH: backend/common/src/main/java/com/ayush/cicd/common/entity/RunAnalysis.java
 package com.ayush.cicd.common.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import java.time.Instant;
 
 /**
- * Stores the AI analysis result for a failed pipeline run.
- *
- * WHY a separate table and not columns on PipelineRun?
- * Not every run gets analysed — only failed ones.
- * Adding 5 nullable columns to pipeline_runs for the 30% of runs
- * that fail wastes space and pollutes the entity.
- * A separate table = clean separation, optional relationship.
- *
- * WHY OneToOne and not OneToMany?
- * One run has one analysis. If we re-analyse (model upgrade),
- * we update the existing row, not insert a new one.
+ * AI-generated analysis result for a single failed PipelineRun.
+ * One-to-one with a PipelineRun. Returned by GET /runs/{id}/analysis.
  */
 @Entity
-@Table(name = "run_analysis")
-@Getter
-@Setter
+@Table(name = "run_analyses", indexes = {
+    @Index(name = "idx_ra_run",  columnList = "run_id"),
+    @Index(name = "idx_ra_repo", columnList = "repository_id"),
+})
+@Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class RunAnalysis extends BaseEntity {
+public class RunAnalysis {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "pipeline_run_id", nullable = false, unique = true)
-    
-    private PipelineRun pipelineRun;
+    @Column(name = "run_id", nullable = false, unique = true)
+    private Long runId;
 
-    @Column(name = "category", nullable = false, length = 50)
+    @Column(name = "repository_id", nullable = false)
+    private Long repositoryId;
+
+    @Column(length = 100)
+    private String stage;
+
+    @Column(length = 20)
+    private String severity;
+
+    @Column(length = 50)
     private String category;
 
-    @Column(name = "root_cause_summary", nullable = false, length = 1000)
-    private String rootCauseSummary;
+    /** One-sentence summary shown in UI / notification toasts. */
+    @Column(length = 500)
+    private String summary;
 
-    @Column(name = "suggested_fix", nullable = false, length = 1000)
-    private String suggestedFix;
+    @Column(name = "root_cause", length = 1000)
+    private String rootCause;
 
-    @Column(name = "confidence_score", nullable = false)
-    private Double confidenceScore;
+    @Column(columnDefinition = "TEXT")
+    private String diagnosis;
 
-    @Column(name = "analysed_by_model", length = 100)
-    private String analysedByModel;
+    @Column(length = 1000)
+    private String recommendation;
 
-    // Raw log snippet sent to the LLM — useful for debugging analysis quality
-    @Column(name = "log_snippet", columnDefinition = "TEXT")
-    private String logSnippet;
+    /** Newline-delimited numbered remediation steps. */
+    @Column(name = "remediation_steps", columnDefinition = "TEXT")
+    private String remediationSteps;
+
+    @Column(name = "affected_component", length = 300)
+    private String affectedComponent;
+
+    @Column(name = "estimated_fix_time", length = 100)
+    private String estimatedFixTime;
+
+    @Column(length = 5)
+    private String priority;            // P1–P4
+
+    @Column(name = "similar_failures_count")
+    private int similarFailuresCount;
+
+    @Column(name = "flakiness_score")
+    private double flakinessScore;
+
+    @Column(name = "is_flaky")
+    private boolean isFlaky;
+
+    @Column(name = "failing_tests", length = 2000)
+    private String failingTests;
+
+    @Column(name = "analysed_at")
+    private Instant analysedAt;
+
+    @Column(name = "model_used", length = 100)
+    private String modelUsed;
 }

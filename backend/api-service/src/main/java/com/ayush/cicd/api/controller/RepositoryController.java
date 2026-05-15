@@ -1,232 +1,131 @@
-package com.ayush.cicd.api.controller;
+// PATH: backend/api-service/src/main/java/com/ayush/cicd/api/controller/RepositoryController.java
 
-import com.ayush.cicd.common.entity.PipelineRun;
-import com.ayush.cicd.common.entity.RunAnalysis;
-import com.ayush.cicd.common.entity.User;
-import com.ayush.cicd.common.exception.ResourceNotFoundException;
-import com.ayush.cicd.common.repository.PipelineRunRepository;
-import com.ayush.cicd.common.repository.RunAnalysisRepository;
-import com.ayush.cicd.ingestion.client.AiAnalysisClient;
+package com.ayush.cicd.api.controller;
 
 import com.ayush.cicd.api.dto.request.AddRepositoryRequest;
 import com.ayush.cicd.api.dto.response.ApiResponse;
 import com.ayush.cicd.api.dto.response.RepositoryResponse;
-import com.ayush.cicd.api.dto.response.RunAnalysisResponse;
-import com.ayush.cicd.api.dto.response.PagedResponse;
-import com.ayush.cicd.api.dto.response.PipelineRunResponse;
-
 import com.ayush.cicd.api.service.RepositoryService;
-import com.ayush.cicd.api.service.PipelineRunService;
-import com.ayush.cicd.ingestion.service.GitHubIngestionService;
-
-import com.ayush.cicd.analytics.service.AnalyticsService;
-import com.ayush.cicd.analytics.dto.RepositoryMetricsDto;
-import com.ayush.cicd.analytics.dto.FlakyWorkflowDto;
-import com.ayush.cicd.analytics.dto.TrendPointDto;
-
+import com.ayush.cicd.common.entity.User;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * Repository Management APIs.
+ *
+ * RESPONSIBILITIES:
+ * - add monitored repositories
+ * - fetch repositories
+ * - deactivate repositories
+ *
+ * SECURITY:
+ * - all operations scoped to authenticated user
+ * - ownership enforced inside RepositoryService
+ */
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/repositories")
 @RequiredArgsConstructor
-@Slf4j
+@Tag(name = "Repositories", description = "Repository management APIs")
 public class RepositoryController {
 
         private final RepositoryService repositoryService;
-        private final GitHubIngestionService gitHubIngestionService;
-        private final PipelineRunService pipelineRunService;
-        private final AnalyticsService analyticsService;
 
-        private final RunAnalysisRepository runAnalysisRepository;
-        private final PipelineRunRepository pipelineRunRepository;
-        private final AiAnalysisClient aiAnalysisClient;
-
-        // ===================== REPOSITORY =====================
+        // ------------------------------------------------------------------------
+        // List Repositories
+        // ------------------------------------------------------------------------
 
         @GetMapping
-        public ResponseEntity<ApiResponse<List<RepositoryResponse>>> getAllRepositories(
+        @Operation(summary = "Get all repositories for current user")
+        public ResponseEntity<ApiResponse<List<RepositoryResponse>>> getRepositories(
                         @AuthenticationPrincipal User currentUser) {
 
-                return ResponseEntity.ok(ApiResponse.success(
-                                repositoryService.findAllActiveForUser(currentUser)));
+                List<RepositoryResponse> repositories = repositoryService.findAllActiveForUser(
+                                currentUser);
+
+                return ResponseEntity.ok(
+                                ApiResponse.success(repositories));
         }
 
-        @GetMapping("/{id}")
+        // ------------------------------------------------------------------------
+        // Get Repository
+        // ------------------------------------------------------------------------
+
+        @GetMapping("/{repositoryId}")
+        @Operation(summary = "Get repository by id")
         public ResponseEntity<ApiResponse<RepositoryResponse>> getRepository(
-                        @PathVariable Long id,
+                        @PathVariable Long repositoryId,
                         @AuthenticationPrincipal User currentUser) {
 
-                return ResponseEntity.ok(ApiResponse.success(
-                                repositoryService.findByIdForUser(id, currentUser)));
+                RepositoryResponse repository = repositoryService.findByIdForUser(
+                                repositoryId,
+                                currentUser);
+
+                return ResponseEntity.ok(
+                                ApiResponse.success(repository));
         }
+
+        // ------------------------------------------------------------------------
+        // Add Repository
+        // ------------------------------------------------------------------------
 
         @PostMapping
+        @Operation(summary = "Add repository for monitoring")
         public ResponseEntity<ApiResponse<RepositoryResponse>> addRepository(
                         @Valid @RequestBody AddRepositoryRequest request,
                         @AuthenticationPrincipal User currentUser) {
 
-                RepositoryResponse response = repositoryService.addRepository(request, currentUser);
+                log.info(
+                                "Adding repository for userId={}",
+                                currentUser.getId());
+
+                RepositoryResponse createdRepository = repositoryService.addRepository(
+                                request,
+                                currentUser);
 
                 return ResponseEntity.status(HttpStatus.CREATED)
-                                .body(ApiResponse.success(response, "Repository added successfully"));
+                                .body(
+                                                ApiResponse.success(
+                                                                createdRepository,
+                                                                "Repository added successfully"));
         }
 
-        @DeleteMapping("/{id}")
+        // ------------------------------------------------------------------------
+        // Deactivate Repository
+        // ------------------------------------------------------------------------
+
+        /**
+         * Soft delete.
+         *
+         * Repository remains persisted but marked inactive.
+         */
+        @DeleteMapping("/{repositoryId}")
+        @Operation(summary = "Deactivate repository")
         public ResponseEntity<ApiResponse<Void>> deactivateRepository(
-                        @PathVariable Long id,
+                        @PathVariable Long repositoryId,
                         @AuthenticationPrincipal User currentUser) {
 
-                repositoryService.deactivateRepository(id, currentUser);
+                repositoryService.deactivateRepository(
+                                repositoryId,
+                                currentUser);
 
-                return ResponseEntity.ok(ApiResponse.success(null, "Repository deactivated"));
-        }
-
-        // ===================== SYNC =====================
-
-        @PostMapping("/{id}/sync")
-        public ResponseEntity<ApiResponse<String>> syncRepository(@PathVariable Long id) {
-
-                log.info("Manual sync triggered for repository id={}", id);
-
-                int newRuns = gitHubIngestionService.syncRepository(id);
+                log.info(
+                                "Repository {} deactivated by userId={}",
+                                repositoryId,
+                                currentUser.getId());
 
                 return ResponseEntity.ok(
-                                ApiResponse.success(newRuns + " new runs ingested", "Sync completed"));
-        }
-
-        // ===================== RUNS =====================
-
-        @GetMapping("/{id}/runs")
-        public ResponseEntity<ApiResponse<PagedResponse<PipelineRunResponse>>> getRunsForRepository(
-                        @PathVariable Long id,
-                        @RequestParam(defaultValue = "0") int page,
-                        @RequestParam(defaultValue = "20") int size) {
-
-                return ResponseEntity.ok(ApiResponse.success(
-                                pipelineRunService.getRunsForRepository(id, page, size)));
-        }
-
-        @GetMapping("/{repoId}/runs/{runId}")
-        public ResponseEntity<ApiResponse<PipelineRunResponse>> getRun(
-                        @PathVariable Long repoId,
-                        @PathVariable Long runId) {
-
-                PipelineRun run = pipelineRunRepository.findByIdWithRepository(runId)
-                                .orElseThrow(() -> new ResourceNotFoundException("PipelineRun", runId));
-
-                if (!run.getRepository().getId().equals(repoId)) {
-                        throw new ResourceNotFoundException("PipelineRun not in this repository", runId);
-                }
-
-                PipelineRunResponse response = pipelineRunService.getRunById(runId);
-                return ResponseEntity.ok(ApiResponse.success(response));
-        }
-
-        // ===================== ANALYSIS =====================
-
-        @GetMapping("/{repoId}/runs/{runId}/analysis")
-        public ResponseEntity<ApiResponse<RunAnalysisResponse>> getRunAnalysis(
-                        @PathVariable Long repoId,
-                        @PathVariable Long runId) {
-
-                PipelineRun run = pipelineRunRepository.findByIdWithRepository(runId)
-                                .orElseThrow(() -> new ResourceNotFoundException("PipelineRun", runId));
-
-                if (!run.getRepository().getId().equals(repoId)) {
-                        throw new ResourceNotFoundException("PipelineRun not found in this repository", runId);
-                }
-
-                RunAnalysis analysis = runAnalysisRepository.findByPipelineRunId(runId)
-                                .orElseThrow(() -> new ResourceNotFoundException(
-                                                "No analysis available for run", runId));
-
-                RunAnalysisResponse response = RunAnalysisResponse.builder()
-                                .id(analysis.getId())
-                                .pipelineRunId(runId)
-                                .category(analysis.getCategory())
-                                .rootCauseSummary(analysis.getRootCauseSummary())
-                                .suggestedFix(analysis.getSuggestedFix())
-                                .confidenceScore(analysis.getConfidenceScore())
-                                .analysedByModel(analysis.getAnalysedByModel())
-                                .logSnippet(analysis.getLogSnippet())
-                                .createdAt(analysis.getCreatedAt())
-                                .build();
-
-                return ResponseEntity.ok(ApiResponse.success(response));
-        }
-
-        @PostMapping("/{repoId}/runs/{runId}/analyse")
-        public ResponseEntity<ApiResponse<String>> triggerAnalysis(
-                        @PathVariable Long repoId,
-                        @PathVariable Long runId) {
-
-                log.info("Manual AI analysis triggered for runId={}", runId);
-
-                PipelineRun run = pipelineRunRepository.findByIdWithRepository(runId)
-                                .orElseThrow(() -> new ResourceNotFoundException("PipelineRun", runId));
-
-                if (!run.getRepository().getId().equals(repoId)) {
-                        throw new ResourceNotFoundException("PipelineRun not in this repository", runId);
-                }
-
-                if (runAnalysisRepository.existsByPipelineRunId(runId)) {
-                        return ResponseEntity.ok(
-                                        ApiResponse.success("Analysis already exists for this run"));
-                }
-
-                RunAnalysis analysis = aiAnalysisClient.analyse(run);
-
-                if (analysis != null) {
-                        runAnalysisRepository.save(analysis);
-
-                        log.info("AI analysis saved for runId={}, category={}",
-                                        runId, analysis.getCategory());
-
-                        return ResponseEntity.ok(
-                                        ApiResponse.success("Analysis complete - category: " + analysis.getCategory()));
-                }
-
-                log.error("AI analysis failed for runId={}", runId);
-
-                return ResponseEntity.ok(
-                                ApiResponse.error("AI analysis failed — check AI service logs"));
-        }
-
-        // ===================== ANALYTICS =====================
-
-        @GetMapping("/{id}/metrics")
-        public ResponseEntity<ApiResponse<RepositoryMetricsDto>> getMetrics(
-                        @PathVariable Long id,
-                        @RequestParam(defaultValue = "30d") String window) {
-
-                return ResponseEntity.ok(ApiResponse.success(
-                                analyticsService.getRepositoryMetrics(id, window)));
-        }
-
-        @GetMapping("/{id}/metrics/trend")
-        public ResponseEntity<ApiResponse<List<TrendPointDto>>> getBuildTrend(
-                        @PathVariable Long id,
-                        @RequestParam(defaultValue = "30d") String window) {
-
-                return ResponseEntity.ok(ApiResponse.success(
-                                analyticsService.getBuildTrend(id, window)));
-        }
-
-        @GetMapping("/{id}/flaky")
-        public ResponseEntity<ApiResponse<List<FlakyWorkflowDto>>> getFlakyWorkflows(
-                        @PathVariable Long id,
-                        @RequestParam(defaultValue = "30d") String window) {
-
-                return ResponseEntity.ok(ApiResponse.success(
-                                analyticsService.getFlakyWorkflows(id, window)));
+                                ApiResponse.success(
+                                                null,
+                                                "Repository deactivated successfully"));
         }
 }

@@ -1,20 +1,26 @@
+// PATH: backend/src/main/java/com/pipelineiq/analyzer/config/AppConfig.java
 package com.ayush.cicd.api.config;
 
-import com.ayush.cicd.api.security.JwtProperties;
-import com.ayush.cicd.ingestion.config.GitHubProperties;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.retry.annotation.EnableRetry;
+import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
-/**
- * WHY @EnableCaching here?
- * @Cacheable annotations in AnalyticsService do nothing without this switch.
- * Spring needs to know to create the cache proxy infrastructure.
- * We put it in AppConfig because this is the central configuration class
- * for cross-cutting concerns that apply to the whole application.
- */
 @Configuration
-@EnableCaching
-@EnableConfigurationProperties({GitHubProperties.class, JwtProperties.class})
+@EnableAsync
+@EnableRetry
+@EnableScheduling
 public class AppConfig {
+
+    @Bean
+    public RestTemplate restTemplate() {
+        // Timeouts for all external API calls (OpenAI, Groq, GitHub)
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(10_000);
+        factory.setReadTimeout(30_000);
+        return new RestTemplate(factory);
+    }
 }

@@ -69,13 +69,13 @@ public class AiAnalysisClient {
             }
 
             return RunAnalysis.builder()
-                    .pipelineRun(run)
+                    .runId(run.getId())
+                    .repositoryId(run.getRepository().getId())
                     .category(response.getCategory())
-                    .rootCauseSummary(response.getRootCauseSummary())
-                    .suggestedFix(response.getSuggestedFix())
-                    .confidenceScore(response.getConfidenceScore())
-                    .analysedByModel(response.getAnalysedByModel())
-                    .logSnippet(response.getLogSnippet())
+                    .rootCause(response.getRootCauseSummary())
+                    .recommendation(response.getSuggestedFix())
+                    .modelUsed(response.getAnalysedByModel())
+                    .analysedAt(java.time.Instant.now())
                     .build();
 
         } catch (WebClientResponseException e) {
@@ -84,8 +84,8 @@ public class AiAnalysisClient {
         }
 
         catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException(e);
+            log.error("AI analysis failed for run {}", run.getId(), e);
+            return null;
         }
     }
 

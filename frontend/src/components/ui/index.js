@@ -1,6 +1,4 @@
-// ═══════════════════════════════════════════════════════════════════════════════
-// src/components/ui/index.js  — barrel export
-// ═══════════════════════════════════════════════════════════════════════════════
+// Central barrel — import anything from '@/components/ui'
 export { Spinner, FullPageSpinner } from './Spinner'
 export { Badge } from './Badge'
 export { StatCard } from './StatCard'
@@ -9,3 +7,4 @@ export { ErrorBanner } from './ErrorBanner'
 export { Modal } from './Modal'
 export { Tooltip } from './Tooltip'
 export { SkeletonRows } from './SkeletonRow'
+export { ToastProvider, useToast } from './Toast'

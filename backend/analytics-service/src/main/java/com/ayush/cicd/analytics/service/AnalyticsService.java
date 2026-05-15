@@ -55,9 +55,9 @@ public class AnalyticsService {
 
                 // Load all completed runs in the window
                 List<PipelineRun> runs = runRepository
-                                .findByRepositoryIdAndStartedAtAfterOrderByStartedAtAsc(repositoryId, since)
+                                .findByRepository_IdAndStartedAtAfterOrderByStartedAtAsc(repositoryId, since)
                                 .stream()
-                                .filter(r -> r.getStatus() != BuildStatus.IN_PROGRESS)
+                                .filter(r -> r.getStatus() != BuildStatus.RUNNING)
                                 .collect(Collectors.toList());
 
                 if (runs.isEmpty()) {
@@ -66,7 +66,7 @@ public class AnalyticsService {
 
                 long total = runs.size();
                 long successful = countByStatus(runs, BuildStatus.SUCCESS);
-                long failed = countByStatus(runs, BuildStatus.FAILURE);
+                long failed = countByStatus(runs, BuildStatus.FAILED);
                 long cancelled = countByStatus(runs, BuildStatus.CANCELLED);
 
                 OptionalDouble avgDurationOpt = runs.stream()
@@ -134,7 +134,7 @@ public class AnalyticsService {
 
                 // All runs in window — needed for denominator in flakiness score
                 List<PipelineRun> allRuns = runRepository
-                                .findByRepositoryIdAndStartedAtAfterOrderByStartedAtAsc(repositoryId, since);
+                                .findByRepository_IdAndStartedAtAfterOrderByStartedAtAsc(repositoryId, since);
 
                 // Group all runs by workflow for total count per workflow
                 Map<String, Long> totalByWorkflow = allRuns.stream()
@@ -184,7 +184,7 @@ public class AnalyticsService {
                 Instant since = computeSince(metricsWindow);
 
                 List<PipelineRun> runs = runRepository
-                                .findByRepositoryIdAndStartedAtAfterOrderByStartedAtAsc(repositoryId, since);
+                                .findByRepository_IdAndStartedAtAfterOrderByStartedAtAsc(repositoryId, since);
 
                 // Group runs by date string
                 Map<String, List<PipelineRun>> runsByDate = runs.stream()
@@ -207,7 +207,7 @@ public class AnalyticsService {
                                         .date(dateKey)
                                         .totalRuns(dayRuns.size())
                                         .successfulRuns(countByStatus(dayRuns, BuildStatus.SUCCESS))
-                                        .failedRuns(countByStatus(dayRuns, BuildStatus.FAILURE))
+                                        .failedRuns(countByStatus(dayRuns, BuildStatus.FAILED))
                                         .build());
                 }
 
@@ -254,7 +254,7 @@ public class AnalyticsService {
                                         List<PipelineRun> wRuns = entry.getValue();
                                         long total = wRuns.size();
                                         long successful = countByStatus(wRuns, BuildStatus.SUCCESS);
-                                        long failed = countByStatus(wRuns, BuildStatus.FAILURE);
+                                        long failed = countByStatus(wRuns, BuildStatus.FAILED);
 
                                         OptionalDouble avg = wRuns.stream()
                                                         .filter(r -> r.getDurationMs() != null)

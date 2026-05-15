@@ -36,13 +36,13 @@ public class GitHubIngestionService {
     private final AiAnalysisClient aiAnalysisClient;
 
     @Caching(evict = {
-        @CacheEvict(value = "repositoryMetrics", key = "#repositoryId + '_7d'"),
-        @CacheEvict(value = "repositoryMetrics", key = "#repositoryId + '_30d'"),
-        @CacheEvict(value = "repositoryMetrics", key = "#repositoryId + '_all'"),
-        @CacheEvict(value = "flakyWorkflows",    key = "#repositoryId + '_7d'"),
-        @CacheEvict(value = "flakyWorkflows",    key = "#repositoryId + '_30d'"),
-        @CacheEvict(value = "buildTrend",        key = "#repositoryId + '_7d'"),
-        @CacheEvict(value = "buildTrend",        key = "#repositoryId + '_30d'")
+            @CacheEvict(value = "repositoryMetrics", key = "#repositoryId + '_7d'"),
+            @CacheEvict(value = "repositoryMetrics", key = "#repositoryId + '_30d'"),
+            @CacheEvict(value = "repositoryMetrics", key = "#repositoryId + '_all'"),
+            @CacheEvict(value = "flakyWorkflows", key = "#repositoryId + '_7d'"),
+            @CacheEvict(value = "flakyWorkflows", key = "#repositoryId + '_30d'"),
+            @CacheEvict(value = "buildTrend", key = "#repositoryId + '_7d'"),
+            @CacheEvict(value = "buildTrend", key = "#repositoryId + '_30d'")
     })
     @Transactional
     public int syncRepository(Long repositoryId) {
@@ -71,7 +71,7 @@ public class GitHubIngestionService {
         for (GitHubWorkflowRunDto dto : response.getWorkflowRuns()) {
             String externalId = String.valueOf(dto.getId());
             boolean alreadyExists = pipelineRunRepository
-                    .findByRepositoryIdAndExternalRunId(repositoryId, externalId)
+                    .findByRepository_IdAndExternalRunId(repositoryId, externalId)
                     .isPresent();
             if (alreadyExists) {
                 log.debug("Run {} already exists, skipping", externalId);
@@ -105,8 +105,8 @@ public class GitHubIngestionService {
      */
     private void analyseFailedRuns(List<PipelineRun> runs) {
         List<PipelineRun> failedRuns = runs.stream()
-                .filter(r -> r.getStatus() == BuildStatus.FAILURE)
-                .filter(r -> !runAnalysisRepository.existsByPipelineRunId(r.getId()))
+                .filter(r -> r.getStatus() == BuildStatus.FAILED)
+                .filter(r -> !runAnalysisRepository.existsByRunId(r.getId()))
                 .toList();
 
         if (failedRuns.isEmpty()) {

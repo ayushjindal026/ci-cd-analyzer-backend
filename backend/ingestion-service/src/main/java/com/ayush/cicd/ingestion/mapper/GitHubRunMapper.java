@@ -14,11 +14,12 @@ import org.springframework.stereotype.Component;
  * The status+conclusion → BuildStatus mapping is conditional logic,
  * not a simple field-to-field mapping. MapStruct handles simple
  * transformations elegantly but conditional logic requires
+ * 
  * @Mapping with expression= or a custom method — at that point
- * a plain Java class is more readable and easier to unit test.
+ *          a plain Java class is more readable and easier to unit test.
  *
- * This class has zero Spring dependencies — it's pure Java logic.
- * That makes it trivially unit testable without any Spring context.
+ *          This class has zero Spring dependencies — it's pure Java logic.
+ *          That makes it trivially unit testable without any Spring context.
  */
 @Component
 @Slf4j
@@ -54,17 +55,15 @@ public class GitHubRunMapper {
                 .startedAt(dto.getRunStartedAt())
                 .completedAt("completed".equals(dto.getStatus()) ? dto.getUpdatedAt() : null)
                 .durationMs(durationMs)
-                .runUrl(dto.getHtmlUrl())
-                .pullRequest("pull_request".equals(dto.getEvent()))
                 .build();
     }
 
     /**
      * Maps GitHub's two-field status model to our single BuildStatus enum.
      *
-     * GitHub status field:     "queued" | "in_progress" | "completed"
+     * GitHub status field: "queued" | "in_progress" | "completed"
      * GitHub conclusion field: "success" | "failure" | "cancelled" |
-     *                          "skipped" | "timed_out" | null
+     * "skipped" | "timed_out" | null
      *
      * The conclusion is only meaningful when status = "completed".
      * When status = "in_progress", conclusion is always null.
@@ -75,7 +74,7 @@ public class GitHubRunMapper {
         }
 
         return switch (status) {
-            case "in_progress", "queued", "waiting" -> BuildStatus.IN_PROGRESS;
+            case "in_progress", "queued", "waiting" -> BuildStatus.RUNNING;
             case "completed" -> mapConclusion(conclusion);
             default -> {
                 log.warn("Unknown GitHub run status: '{}'", status);
@@ -90,13 +89,13 @@ public class GitHubRunMapper {
         }
 
         return switch (conclusion) {
-            case "success"   -> BuildStatus.SUCCESS;
-            case "failure"   -> BuildStatus.FAILURE;
+            case "success" -> BuildStatus.SUCCESS;
+            case "failure" -> BuildStatus.FAILED;
             case "cancelled" -> BuildStatus.CANCELLED;
             // timed_out and action_required are types of failures
-            case "timed_out", "action_required" -> BuildStatus.FAILURE;
+            case "timed_out", "action_required" -> BuildStatus.FAILED;
             // skipped runs — treat as unknown, not a real failure
-            case "skipped"   -> BuildStatus.UNKNOWN;
+            case "skipped" -> BuildStatus.UNKNOWN;
             default -> {
                 log.warn("Unknown GitHub run conclusion: '{}'", conclusion);
                 yield BuildStatus.UNKNOWN;
