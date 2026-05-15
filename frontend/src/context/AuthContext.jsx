@@ -3,68 +3,75 @@ import axios from 'axios'
 
 const AuthContext = createContext(null)
 
-const authHttp = axios.create({ baseURL: '/api/v1', timeout: 10_000 })
-
-// ── Token helpers ─────────────────────────────────────────────────────────────
+// ── Token storage ─────────────────────────────────────────────────────────────
+// Access token: short-lived (15 min) — kept in memory + localStorage
+// Refresh token: long-lived (7 days) — kept in localStorage
+// In Phase 3: move refresh token to httpOnly cookie
 export const tokenStorage = {
-    get: () => localStorage.getItem('piq_token'),
-    set: token => localStorage.setItem('piq_token', token),
-    clear: () => localStorage.removeItem('piq_token'),
+    getAccess: () => localStorage.getItem('piq_access_token'),
+    setAccess: token => localStorage.setItem('piq_access_token', token),
+    getRefresh: () => localStorage.getItem('piq_refresh_token'),
+    setRefresh: token => localStorage.setItem('piq_refresh_token', token),
+    set: token => localStorage.setItem('piq_access_token', token), // legacy compat
+    get: () => localStorage.getItem('piq_access_token'),        // legacy compat
+    clear: () => {
+        localStorage.removeItem('piq_access_token')
+        localStorage.removeItem('piq_refresh_token')
+    },
+    setBoth: (access, refresh) => {
+        localStorage.setItem('piq_access_token', access)
+        localStorage.setItem('piq_refresh_token', refresh)
+    },
 }
 
-// ── Inject JWT into every request ─────────────────────────────────────────────
-authHttp.interceptors.request.use(cfg => {
-    const token = tokenStorage.get()
-    if (token) cfg.headers['Authorization'] = `Bearer ${token}`
-    return cfg
-})
+// Separate axios instance for auth calls — avoids interceptor loops
+const authHttp = axios.create({ baseURL: '/api/v1', timeout: 10_000 })
 
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
 
     const loadUser = useCallback(async () => {
-
-        const token = tokenStorage.get()
-
-        if (!token) {
-            setUser(null)
-            setLoading(false)
-            return
-        }
-
+        const token = tokenStorage.getAccess()
+        if (!token) { setLoading(false); return }
         try {
-
-            const res = await authHttp.get('/auth/me')
-
-            const userData = res.data.data || res.data
-
-            console.log('AUTH USER:', userData)
-
-            setUser(userData)
-
-        } catch (error) {
-
-            const msg = error?.response?.data?.message || ''
-
-            if (
-                error?.response?.status === 401 ||
-                msg.toLowerCase().includes('jwt expired')
-            ) {
-
-                tokenStorage.clear()
-                setUser(null)
+            const res = await authHttp.get('/auth/me', {
+                headers: { Authorization: `Bearer ${token}` },
+            })
+            setUser(res.data)
+        } catch (err) {
+            if (err.response?.status === 401) {
+                // Try refresh before giving up
+                const refreshed = await tryRefresh()
+                if (refreshed) {
+                    try {
+                        const res2 = await authHttp.get('/auth/me', {
+                            headers: { Authorization: `Bearer ${tokenStorage.getAccess()}` },
+                        })
+                        setUser(res2.data)
+                    } catch {
+                        tokenStorage.clear(); setUser(null)
+                    }
+                } else {
+                    tokenStorage.clear(); setUser(null)
+                }
+            } else {
+                tokenStorage.clear(); setUser(null)
             }
-
         } finally {
             setLoading(false)
         }
-
     }, [])
 
     useEffect(() => { loadUser() }, [loadUser])
 
-    const logout = () => {
+    const logout = async (logoutAll = false) => {
+        try {
+            await authHttp.post('/auth/logout',
+                { refresh_token: tokenStorage.getRefresh(), logout_all: logoutAll },
+                { headers: { Authorization: `Bearer ${tokenStorage.getAccess()}` } }
+            )
+        } catch { /* ignore — clear locally regardless */ }
         tokenStorage.clear()
         setUser(null)
         window.location.href = '/login'
@@ -77,9 +84,26 @@ export function AuthProvider({ children }) {
     )
 }
 
+// ── Refresh helper — used by both AuthProvider and api/client.js ──────────────
+export async function tryRefresh() {
+    const refreshToken = tokenStorage.getRefresh()
+    if (!refreshToken) return false
+    try {
+        const res = await axios.post('/api/v1/auth/refresh',
+            { refresh_token: refreshToken },
+            { headers: { 'Content-Type': 'application/json' } }
+        )
+        tokenStorage.setBoth(res.data.access_token, res.data.refresh_token)
+        return true
+    } catch {
+        tokenStorage.clear()
+        return false
+    }
+}
+
 // eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => {
     const ctx = useContext(AuthContext)
-    if (!ctx) throw new Error('useAuth must be used within AuthProvider')
+    if (!ctx) throw new Error('useAuth must be inside AuthProvider')
     return ctx
 }

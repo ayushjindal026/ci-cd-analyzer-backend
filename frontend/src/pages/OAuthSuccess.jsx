@@ -4,13 +4,12 @@ import { tokenStorage } from '@/context/AuthContext'
 import { Activity } from 'lucide-react'
 
 /**
- * Landing page after GitHub OAuth.
- * Backend redirects to: /oauth-success?token=<jwt>
+ * Handles the post-OAuth redirect from the backend.
  *
- * This component:
- *   1. Reads the token from the URL
- *   2. Saves it to localStorage via tokenStorage
- *   3. Redirects to /  (dashboard)
+ * New backend sends:  /oauth-success?access_token=...&refresh_token=...
+ * Old backend sent:   /oauth-success?token=...
+ *
+ * We support both so a backend rollback doesn't break the frontend.
  */
 export default function OAuthSuccess() {
     const navigate = useNavigate()
@@ -18,14 +17,25 @@ export default function OAuthSuccess() {
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search)
-        const token = params.get('token')
 
-        if (token) {
-            tokenStorage.set(token)
-            // Clean the token from the URL before navigating
+        // New dual-token format
+        const accessToken = params.get('access_token')
+        const refreshToken = params.get('refresh_token')
+
+        // Legacy single-token format (backwards compat)
+        const legacyToken = params.get('token')
+
+        if (accessToken && refreshToken) {
+            tokenStorage.setBoth(accessToken, refreshToken)
             window.history.replaceState({}, document.title, '/oauth-success')
-            // Small delay so user sees the success state
-            setTimeout(() => navigate('/', { replace: true }), 800)
+            setTimeout(() => navigate('/', { replace: true }), 700)
+
+        } else if (legacyToken) {
+            // Legacy: only access token provided
+            tokenStorage.setAccess(legacyToken)
+            window.history.replaceState({}, document.title, '/oauth-success')
+            setTimeout(() => navigate('/', { replace: true }), 700)
+
         } else {
             setError('No token received from server. Please try signing in again.')
             setTimeout(() => navigate('/login', { replace: true }), 3000)
@@ -48,9 +58,13 @@ export default function OAuthSuccess() {
                 ) : (
                     <>
                         <div className="flex items-center justify-center gap-2 mb-3">
-                            <div className="w-2 h-2 rounded-full bg-brand-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                            <div className="w-2 h-2 rounded-full bg-brand-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                            <div className="w-2 h-2 rounded-full bg-brand-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                            {[0, 150, 300].map(delay => (
+                                <div
+                                    key={delay}
+                                    className="w-2 h-2 rounded-full bg-brand-400 animate-bounce"
+                                    style={{ animationDelay: `${delay}ms` }}
+                                />
+                            ))}
                         </div>
                         <p className="text-white font-semibold">Signing you in…</p>
                         <p className="text-sm text-gray-400 mt-1">Setting up your dashboard</p>
