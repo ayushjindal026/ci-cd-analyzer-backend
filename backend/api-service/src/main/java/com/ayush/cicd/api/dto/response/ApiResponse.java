@@ -1,48 +1,95 @@
+// PATH: backend/api-service/src/main/java/com/ayush/cicd/api/dto/response/ApiResponse.java
+
 package com.ayush.cicd.api.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import lombok.Builder;
-import lombok.Data;
+import lombok.*;
 
 import java.time.Instant;
+import java.util.Map;
 
 /**
- * Standard envelope for every API response in this project.
+ * Standard API response wrapper.
  *
- * WHY a standard envelope?
- * Without it, different endpoints return bare objects, arrays, error strings —
- * unpredictable for any client. With it, clients always know:
- * - Was this successful? → success field
- * - Where is the data? → data field
- * - What went wrong? → error field
- * - When did this happen? → timestamp field
+ * SUCCESS:
+ * {
+ * "success": true,
+ * "message": "Repository added successfully",
+ * "data": {...},
+ * "timestamp": "2026-05-17T12:00:00Z"
+ * }
  *
- * WHY @JsonInclude(NON_NULL)?
- * Error responses have no 'data'. Success responses have no 'error'.
- * NON_NULL omits those fields from the JSON entirely instead of
- * returning "data": null or "error": null.
+ * ERROR:
+ * {
+ * "success": false,
+ * "message": "Validation failed",
+ * "error": "VALIDATION_ERROR",
+ * "timestamp": "2026-05-17T12:00:00Z"
+ * }
+ *
+ * VALIDATION:
+ * {
+ * "success": false,
+ * "message": "Validation failed",
+ * "error": "VALIDATION_ERROR",
+ * "fieldErrors": {
+ * "email": "Email is required"
+ * }
+ * }
  */
-@Data
+@Getter
+@Setter
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ApiResponse<T> {
 
+    // ------------------------------------------------------------------------
+    // Core Fields
+    // ------------------------------------------------------------------------
+
     private boolean success;
+
     private String message;
+
+    /**
+     * Optional response payload.
+     */
     private T data;
+
+    /**
+     * Optional machine-readable error code.
+     */
     private String error;
 
+    /**
+     * Validation field-level errors.
+     */
+    private Map<String, String> fieldErrors;
+
+    /**
+     * Response creation timestamp.
+     */
     @Builder.Default
     private Instant timestamp = Instant.now();
 
+    // ------------------------------------------------------------------------
+    // Success Responses
+    // ------------------------------------------------------------------------
+
     public static <T> ApiResponse<T> success(T data) {
+
         return ApiResponse.<T>builder()
                 .success(true)
                 .data(data)
                 .build();
     }
 
-    public static <T> ApiResponse<T> success(T data, String message) {
+    public static <T> ApiResponse<T> success(
+            T data,
+            String message) {
+
         return ApiResponse.<T>builder()
                 .success(true)
                 .message(message)
@@ -50,10 +97,52 @@ public class ApiResponse<T> {
                 .build();
     }
 
-    public static <T> ApiResponse<T> error(String errorMessage) {
+    public static <T> ApiResponse<T> success(
+            String message) {
+
+        return ApiResponse.<T>builder()
+                .success(true)
+                .message(message)
+                .build();
+    }
+
+    // ------------------------------------------------------------------------
+    // Error Responses
+    // ------------------------------------------------------------------------
+
+    public static <T> ApiResponse<T> error(
+            String message) {
+
         return ApiResponse.<T>builder()
                 .success(false)
-                .error(errorMessage)
+                .message(message)
+                .build();
+    }
+
+    public static <T> ApiResponse<T> error(
+            String message,
+            String errorCode) {
+
+        return ApiResponse.<T>builder()
+                .success(false)
+                .message(message)
+                .error(errorCode)
+                .build();
+    }
+
+    // ------------------------------------------------------------------------
+    // Validation Error Responses
+    // ------------------------------------------------------------------------
+
+    public static <T> ApiResponse<T> validationError(
+            String message,
+            Map<String, String> fieldErrors) {
+
+        return ApiResponse.<T>builder()
+                .success(false)
+                .message(message)
+                .error("VALIDATION_ERROR")
+                .fieldErrors(fieldErrors)
                 .build();
     }
 }
