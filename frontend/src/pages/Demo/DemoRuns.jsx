@@ -39,7 +39,7 @@ export function DemoRuns() {
 
     const filtered = runs.filter(r => {
         const statusOk = statusFilter === 'all' || r.status.toLowerCase() === statusFilter
-        const repoOk = repoFilter === 'all' || String(r.repoId) === repoFilter
+        const repoOk = repoFilter === 'all' || String(r.repositoryId) === repoFilter
         return statusOk && repoOk
     })
 
@@ -117,7 +117,7 @@ export function DemoRuns() {
 
             <RunDetailDrawer
                 run={selected}
-                repoId={selected?.repoId}
+                repositoryId={selected?.repositoryId}
                 open={selected !== null}
                 onClose={() => setSelected(null)}
                 demoMode

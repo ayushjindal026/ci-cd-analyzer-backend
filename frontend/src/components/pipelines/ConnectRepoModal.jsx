@@ -108,22 +108,51 @@ export function ConnectRepoModal({ open, onClose, onConnected, connectedRepos = 
 
     // ── Connect ───────────────────────────────────────────────────────────────
     const handleConnect = async (ghRepo) => {
+
         setConnecting(ghRepo.fullName)
+
         try {
-            // Split "owner/repo" → owner + repoName
-            const [owner, repoName] = ghRepo.fullName.split('/')
+
             await repoApi.add({
-                owner,
-                repoName,
-                source: 'GITHUB',
-                defaultBranch: ghRepo.defaultBranch ?? 'main',
+
+                githubRepoId:
+                    ghRepo.id,
+
+                fullName:
+                    ghRepo.fullName,
+
+                defaultBranch:
+                    ghRepo.defaultBranch ?? 'main',
+
+                privateRepo:
+                    ghRepo.isPrivate ?? false,
+
+                htmlUrl:
+                    ghRepo.htmlUrl ?? '',
             })
-            toast.success('Repository connected!', `${ghRepo.fullName} is now being monitored.`)
+
+            toast.success(
+                'Repository connected!',
+                `${ghRepo.fullName} is now being monitored.`
+            )
+
             onConnected?.()
+
         } catch (e) {
-            const msg = e.response?.data?.message ?? 'Failed to connect repository.'
-            toast.error('Connection failed', msg)
+
+            console.error(e)
+
+            const msg =
+                e.response?.data?.message
+                ?? 'Failed to connect repository.'
+
+            toast.error(
+                'Connection failed',
+                msg
+            )
+
         } finally {
+
             setConnecting(null)
         }
     }

@@ -69,7 +69,7 @@ export const DEMO_RUNS = [
     {
         id: 101,
         buildNumber: 247,
-        repoId: 1,
+        repositoryId: 1,
         repoName: 'api-gateway',
         workflowName: 'CI / Build & Test',
         branch: 'main',
@@ -89,7 +89,7 @@ export const DEMO_RUNS = [
     {
         id: 102,
         buildNumber: 190,
-        repoId: 2,
+        repositoryId: 2,
         repoName: 'frontend-app',
         workflowName: 'CI / Lint · Build · Deploy',
         branch: 'feature/dark-mode',
@@ -109,7 +109,7 @@ export const DEMO_RUNS = [
     {
         id: 103,
         buildNumber: 94,
-        repoId: 3,
+        repositoryId: 3,
         repoName: 'ml-pipeline',
         workflowName: 'ML / Train & Evaluate',
         branch: 'experiment/transformer-v2',
@@ -130,7 +130,7 @@ export const DEMO_RUNS = [
     {
         id: 104,
         buildNumber: 246,
-        repoId: 1,
+        repositoryId: 1,
         repoName: 'api-gateway',
         workflowName: 'CI / Build & Test',
         branch: 'fix/auth-token-refresh',
@@ -150,7 +150,7 @@ export const DEMO_RUNS = [
     {
         id: 105,
         buildNumber: 245,
-        repoId: 1,
+        repositoryId: 1,
         repoName: 'api-gateway',
         workflowName: 'CI / Build & Test',
         branch: 'feature/rate-limiting',
@@ -171,7 +171,7 @@ export const DEMO_RUNS = [
     {
         id: 106,
         buildNumber: 62,
-        repoId: 4,
+        repositoryId: 4,
         repoName: 'infra-terraform',
         workflowName: 'Infra / Plan & Apply',
         branch: 'main',
@@ -190,7 +190,7 @@ export const DEMO_RUNS = [
     {
         id: 107,
         buildNumber: 93,
-        repoId: 3,
+        repositoryId: 3,
         repoName: 'ml-pipeline',
         workflowName: 'ML / Train & Evaluate',
         branch: 'develop',
@@ -210,7 +210,7 @@ export const DEMO_RUNS = [
     {
         id: 108,
         buildNumber: 189,
-        repoId: 2,
+        repositoryId: 2,
         repoName: 'frontend-app',
         workflowName: 'CI / Lint · Build · Deploy',
         branch: 'main',

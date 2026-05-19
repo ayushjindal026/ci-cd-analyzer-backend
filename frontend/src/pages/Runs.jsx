@@ -62,7 +62,7 @@ function Pagination({ page, totalPages, onChange }) {
 export default function Runs() {
     const [searchParams] = useSearchParams()
     const { repos } = useRepositories()
-    const [selRepo, setSelRepo] = useState(searchParams.get('repoId') ?? '')
+    const [selRepo, setSelRepo] = useState(searchParams.get('repositoryId') ?? '')
     const [status, setStatus] = useState('all')
     const [page, setPage] = useState(0)
     const [selected, setSelected] = useState(null)
@@ -70,7 +70,7 @@ export default function Runs() {
     useEffect(() => { setPage(0) }, [selRepo, status])
 
     const params = useMemo(() => ({
-        repoId: selRepo || undefined,
+        repositoryId: selRepo || undefined,
         status, page, size: 15,
     }), [selRepo, status, page])
 
@@ -218,7 +218,7 @@ export default function Runs() {
             {/* Slide-in drawer — replaces modal */}
             <RunDetailDrawer
                 run={selected}
-                repoId={selected?.repositoryId ?? selected?.repoId}
+                repositoryId={selected?.repositoryId ?? selected?.repositoryId}
                 open={selected !== null}
                 onClose={() => setSelected(null)}
             />

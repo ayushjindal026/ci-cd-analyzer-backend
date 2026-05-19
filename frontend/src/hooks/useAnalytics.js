@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react'
 import { repoApi, analyticsApi } from '@/api/client'
 
 /**
- * Fetches metrics. If repoId → single repo metrics.
+ * Fetches metrics. If repositoryId → single repo metrics.
  * If null → fetches all repos and merges metrics into one dashboard object.
  *
  * Backend shape expected (flexible — handles many variants):
@@ -17,7 +17,7 @@ import { repoApi, analyticsApi } from '@/api/client'
  *   statusBreakdown: [{ name, value }]
  * }
  */
-export function useAnalytics(repoId) {
+export function useAnalytics(repositoryId) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -25,8 +25,8 @@ export function useAnalytics(repoId) {
   useEffect(() => {
     setLoading(true); setError(null)
 
-    const doFetch = repoId
-      ? analyticsApi.metrics(repoId).then(r => r.data)
+    const doFetch = repositoryId
+      ? analyticsApi.metrics(repositoryId).then(r => r.data)
       : repoApi.list().then(async res => {
         const repos = Array.isArray(res.data) ? res.data : res.data?.content ?? []
         if (!repos.length) return null
@@ -41,7 +41,7 @@ export function useAnalytics(repoId) {
       .then(d => setData(d))
       .catch(e => setError(e.response?.data?.message ?? 'Failed to load analytics'))
       .finally(() => setLoading(false))
-  }, [repoId])
+  }, [repositoryId])
 
   return { data, loading, error }
 }

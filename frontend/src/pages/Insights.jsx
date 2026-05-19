@@ -1,6 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════════════════
-// src/pages/Insights.jsx  — thin: delegates to ai/ components
-// ═══════════════════════════════════════════════════════════════════════════════
 import { Brain, RefreshCw, Sparkles } from 'lucide-react'
 import { useAiInsights } from '@/hooks/useAiInsights'
 import { useRuns } from '@/hooks/useRuns'
@@ -38,7 +35,7 @@ export default function Insights() {
     const critCount = display.filter(i => (i.severity ?? '').toLowerCase() === 'critical').length
     const score = insights?.length
         ? Math.max(10, Math.min(99, 100 - critCount * 18 - (display.length - critCount) * 6))
-        : 68
+        : 100
 
     return (
         <div className="space-y-6">
@@ -77,18 +74,62 @@ export default function Insights() {
                     <div className="card p-5">
                         <h3 className="section-title mb-4">Prediction Signals</h3>
                         <div className="space-y-3">
-                            {[
-                                { label: 'Failure prob. (next run)', value: '34%', cls: 'text-amber-600 dark:text-amber-400' },
-                                { label: 'Most likely failing stage', value: 'Test', cls: 'text-red-600   dark:text-red-400' },
-                                { label: 'Est. MTTR', value: '18m', cls: 'text-brand-600 dark:text-brand-400' },
-                                { label: 'Flaky test probability', value: '62%', cls: 'text-amber-600 dark:text-amber-400' },
-                                { label: 'Health trend (7 days)', value: '↑ worse', cls: 'text-red-600   dark:text-red-400' },
-                            ].map(({ label, value, cls }) => (
-                                <div key={label} className="flex items-center justify-between text-sm py-0.5">
-                                    <span className="text-gray-500 dark:text-gray-400">{label}</span>
-                                    <span className={`font-semibold ${cls}`}>{value}</span>
-                                </div>
-                            ))}
+
+                            <div className="flex items-center justify-between text-sm py-0.5">
+                                <span className="text-gray-500 dark:text-gray-400">
+                                    Total insights
+                                </span>
+
+                                <span className="font-semibold text-brand-600 dark:text-brand-400">
+                                    {display.length}
+                                </span>
+                            </div>
+
+                            <div className="flex items-center justify-between text-sm py-0.5">
+                                <span className="text-gray-500 dark:text-gray-400">
+                                    Critical issues
+                                </span>
+
+                                <span className="font-semibold text-red-600 dark:text-red-400">
+                                    {
+                                        display.filter(
+                                            i =>
+                                                (i.severity ?? '')
+                                                    .toLowerCase() === 'critical'
+                                        ).length
+                                    }
+                                </span>
+                            </div>
+
+                            <div className="flex items-center justify-between text-sm py-0.5">
+                                <span className="text-gray-500 dark:text-gray-400">
+                                    Flaky pipelines
+                                </span>
+
+                                <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                    {
+                                        display.filter(
+                                            i => i.isFlaky
+                                        ).length
+                                    }
+                                </span>
+                            </div>
+
+                            <div className="flex items-center justify-between text-sm py-0.5">
+                                <span className="text-gray-500 dark:text-gray-400">
+                                    Highest severity
+                                </span>
+
+                                <span className="font-semibold text-red-600 dark:text-red-400">
+                                    {
+                                        critCount > 0
+                                            ? 'Critical'
+                                            : display.length
+                                                ? 'Warning'
+                                                : 'Healthy'
+                                    }
+                                </span>
+                            </div>
                         </div>
                     </div>
 

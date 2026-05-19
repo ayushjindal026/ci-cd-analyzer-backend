@@ -83,6 +83,7 @@ export const repoApi = {
   sync: id => api.post(`/repositories/${id}/sync`),
   runs: (id, p) => api.get(`/repositories/${id}/runs`, { params: p }),
   metrics: id => api.get(`/repositories/${id}/metrics`),
+  analyses: id => api.get(`/repositories/${id}/analyses`),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

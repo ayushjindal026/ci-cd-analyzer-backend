@@ -10,7 +10,8 @@ import lombok.Data;
  * WHY a DTO and not accepting the entity directly in the controller?
  *
  * Accepting a JPA entity in a controller is a serious anti-pattern:
- * 1. The client could set id, createdAt, active — fields they must never control
+ * 1. The client could set id, createdAt, active — fields they must never
+ * control
  * 2. Validation annotations would mix persistence concerns with API concerns
  * 3. You can't evolve the API shape and the DB schema independently
  *
@@ -20,6 +21,14 @@ import lombok.Data;
  */
 @Data
 public class AddRepositoryRequest {
+
+    private Long githubRepoId;
+
+    private String fullName;
+
+    private boolean privateRepo;
+
+    private String htmlUrl;
 
     @NotBlank(message = "Owner is required")
     @Size(max = 100, message = "Owner must be 100 characters or less")

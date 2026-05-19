@@ -16,7 +16,7 @@ export function TriggerPanel({ repos = [], runs = [], onTriggered }) {
 
     const failedRuns = runs.filter(r => {
         const status = (r.status ?? '').toUpperCase()
-        const matches = !selRepo || String(r.repositoryId ?? r.repoId) === selRepo
+        const matches = !selRepo || String(r.repositoryId ?? r.repositoryId) === selRepo
         return matches && ['FAILED', 'FAILURE'].includes(status)
     })
 

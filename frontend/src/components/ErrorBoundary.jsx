@@ -60,7 +60,7 @@ export class ErrorBoundary extends Component {
                             onClick={() => { this.setState({ hasError: false, error: null, info: null }); window.location.href = '/' }}
                             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-800 text-gray-200 text-sm font-medium hover:bg-gray-700 transition-colors"
                         >
-                            Go to Dashboard
+                            Continue with GitHub
                         </button>
                     </div>
                 </div>

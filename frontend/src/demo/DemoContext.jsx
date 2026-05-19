@@ -64,7 +64,7 @@ export function DemoProvider({ children }) {
             const newRun = {
                 id: Date.now(),
                 buildNumber: Math.floor(Math.random() * 50) + 300,
-                repoId: repo.id,
+                repositoryId: repo.id,
                 repoName: repo.repoName,
                 workflowName: 'CI / Build & Test',
                 branch,
@@ -123,7 +123,7 @@ export function DemoProvider({ children }) {
     }, [])
 
     // ── Actions (no-op with feedback) ─────────────────────────────────────────
-    const triggerAnalysis = useCallback((repoId, runId) => {
+    const triggerAnalysis = useCallback((repositoryId, runId) => {
         // Simulate analysis becoming available after a delay
         setTimeout(() => {
             setNotifications(prev => [{

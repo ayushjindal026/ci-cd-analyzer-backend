@@ -7,6 +7,7 @@ import com.ayush.cicd.common.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
@@ -36,289 +37,297 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class GitHubOAuthService {
 
-    private final RestTemplate restTemplate;
+        private final RestTemplate restTemplate;
 
-    private final UserRepository userRepository;
+        private final UserRepository userRepository;
 
-    // ------------------------------------------------------------------------
-    // OAuth Configuration
-    // ------------------------------------------------------------------------
+        // ------------------------------------------------------------------------
+        // OAuth Configuration
+        // ------------------------------------------------------------------------
 
-    @Value("${github.oauth.client-id}")
-    private String clientId;
+        @Value("${github.oauth.client-id}")
+        private String clientId;
 
-    @Value("${github.oauth.client-secret}")
-    private String clientSecret;
+        @Value("${github.oauth.client-secret}")
+        private String clientSecret;
 
-    @Value("${github.oauth.redirect-uri}")
-    private String redirectUri;
+        @Value("${github.oauth.redirect-uri}")
+        private String redirectUri;
 
-    // ------------------------------------------------------------------------
-    // GitHub Endpoints
-    // ------------------------------------------------------------------------
+        // ------------------------------------------------------------------------
+        // GitHub Endpoints
+        // ------------------------------------------------------------------------
 
-    private static final String GITHUB_AUTHORIZE_URL =
-            "https://github.com/login/oauth/authorize";
+        private static final String GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
 
-    private static final String GITHUB_TOKEN_URL =
-            "https://github.com/login/oauth/access_token";
+        private static final String GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token";
 
-    private static final String GITHUB_USER_URL =
-            "https://api.github.com/user";
+        private static final String GITHUB_USER_URL = "https://api.github.com/user";
 
-    // ------------------------------------------------------------------------
-    // Step 1: Authorization URL
-    // ------------------------------------------------------------------------
+        private static final String GITHUB_EMAIL_URL = "https://api.github.com/user/emails";
 
-    public String buildAuthorizationUrl() {
+        // ------------------------------------------------------------------------
+        // Step 1: Authorization URL
+        // ------------------------------------------------------------------------
 
-        return GITHUB_AUTHORIZE_URL
-                + "?client_id="
-                + urlEncode(clientId)
+        public String buildAuthorizationUrl() {
 
-                + "&redirect_uri="
-                + urlEncode(redirectUri)
+                return GITHUB_AUTHORIZE_URL
+                                + "?client_id="
+                                + urlEncode(clientId)
 
-                + "&scope="
-                + urlEncode("read:user user:email");
-    }
+                                + "&redirect_uri="
+                                + urlEncode(redirectUri)
 
-    // ------------------------------------------------------------------------
-    // Step 2: Handle OAuth Callback
-    // ------------------------------------------------------------------------
-
-    public User handleCallback(String code) {
-
-        // --------------------------------------------------------------------
-        // Exchange code for GitHub access token
-        // --------------------------------------------------------------------
-
-        String githubAccessToken =
-                exchangeCodeForToken(code);
-
-        // --------------------------------------------------------------------
-        // Fetch GitHub profile
-        // --------------------------------------------------------------------
-
-        Map<String, Object> profile =
-                fetchGitHubProfile(githubAccessToken);
-
-        Long githubId =
-                toLong(profile.get("id"));
-
-        if (githubId == null) {
-
-            throw new IllegalStateException(
-                    "GitHub profile missing user id"
-            );
+                                + "&scope="
+                                + urlEncode("read:user user:email");
         }
 
-        String username =
-                (String) profile.get("login");
+        // ------------------------------------------------------------------------
+        // Step 2: Handle OAuth Callback
+        // ------------------------------------------------------------------------
 
-        String email =
-                (String) profile.get("email");
+        public User handleCallback(String code) {
 
-        String avatarUrl =
-                (String) profile.get("avatar_url");
+                // --------------------------------------------------------------------
+                // Exchange code for GitHub access token
+                // --------------------------------------------------------------------
 
-        // --------------------------------------------------------------------
-        // Fallback email handling
-        // --------------------------------------------------------------------
+                String githubAccessToken = exchangeCodeForToken(code);
 
-        if (email == null || email.isBlank()) {
+                // --------------------------------------------------------------------
+                // Fetch GitHub profile
+                // --------------------------------------------------------------------
 
-            email = username + "@github.local";
+                Map<String, Object> profile = fetchGitHubProfile(githubAccessToken);
+
+                Long githubId = toLong(profile.get("id"));
+
+                if (githubId == null) {
+
+                        throw new IllegalStateException(
+                                        "GitHub profile missing user id");
+                }
+
+                String username = (String) profile.get("login");
+
+                String email = (String) profile.get("email");
+
+                if (email == null || email.isBlank()) {
+
+                        email = fetchPrimaryEmail(githubAccessToken);
+                }
+
+                String avatarUrl = (String) profile.get("avatar_url");
+
+                // --------------------------------------------------------------------
+                // Fallback email handling
+                // --------------------------------------------------------------------
+
+                if (email == null || email.isBlank()) {
+
+                        email = username + "@github.local";
+                }
+
+                log.info(
+                                "GitHub OAuth login successful for githubId={} username={}",
+                                githubId,
+                                username);
+
+                // --------------------------------------------------------------------
+                // Upsert local user
+                // --------------------------------------------------------------------
+
+                User user = userRepository.findByGithubId(githubId)
+                                .orElseGet(() -> User.builder()
+                                                .githubId(githubId)
+                                                .build());
+
+                // --------------------------------------------------------------------
+                // Always refresh mutable fields
+                // --------------------------------------------------------------------
+
+                user.setUsername(username);
+                user.setEmail(email);
+                user.setAvatarUrl(avatarUrl);
+
+                /**
+                 * NOTE:
+                 * Storing raw GitHub tokens is acceptable for MVP.
+                 * Encrypt or avoid persistence in production.
+                 */
+                user.setGithubToken(githubAccessToken);
+
+                return userRepository.save(user);
         }
 
-        log.info(
-                "GitHub OAuth login successful for githubId={} username={}",
-                githubId,
-                username
-        );
+        // ------------------------------------------------------------------------
+        // Exchange OAuth Code
+        // ------------------------------------------------------------------------
 
-        // --------------------------------------------------------------------
-        // Upsert local user
-        // --------------------------------------------------------------------
+        private String exchangeCodeForToken(String code) {
 
-        User user = userRepository.findByGithubId(githubId)
-                .orElseGet(() ->
-                        User.builder()
-                                .githubId(githubId)
-                                .build()
-                );
+                try {
 
-        // --------------------------------------------------------------------
-        // Always refresh mutable fields
-        // --------------------------------------------------------------------
+                        HttpHeaders headers = new HttpHeaders();
 
-        user.setUsername(username);
-        user.setEmail(email);
-        user.setAvatarUrl(avatarUrl);
+                        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
 
-        /**
-         * NOTE:
-         * Storing raw GitHub tokens is acceptable for MVP.
-         * Encrypt or avoid persistence in production.
-         */
-        user.setGithubToken(githubAccessToken);
+                        headers.setContentType(MediaType.APPLICATION_JSON);
 
-        return userRepository.save(user);
-    }
+                        Map<String, String> requestBody = Map.of(
+                                        "client_id", clientId,
+                                        "client_secret", clientSecret,
+                                        "code", code,
+                                        "redirect_uri", redirectUri);
 
-    // ------------------------------------------------------------------------
-    // Exchange OAuth Code
-    // ------------------------------------------------------------------------
+                        HttpEntity<Map<String, String>> requestEntity = new HttpEntity<>(requestBody, headers);
 
-    private String exchangeCodeForToken(String code) {
+                        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
 
-        try {
+                                        GITHUB_TOKEN_URL,
+                                        HttpMethod.POST,
+                                        requestEntity,
 
-            HttpHeaders headers = new HttpHeaders();
+                                        new ParameterizedTypeReference<Map<String, Object>>() {
+                                        });
 
-            headers.setAccept(
-                    List.of(MediaType.APPLICATION_JSON)
-            );
+                        Map<String, Object> body = response.getBody();
 
-            headers.setContentType(
-                    MediaType.APPLICATION_JSON
-            );
+                        if (body == null
+                                        || body.get("access_token") == null) {
 
-            Map<String, String> requestBody = Map.of(
-                    "client_id", clientId,
-                    "client_secret", clientSecret,
-                    "code", code,
-                    "redirect_uri", redirectUri
-            );
+                                throw new IllegalStateException(
+                                                "GitHub token exchange failed");
+                        }
 
-            HttpEntity<Map<String, String>> requestEntity =
-                    new HttpEntity<>(requestBody, headers);
+                        return body
+                                        .get("access_token")
+                                        .toString();
 
-            ResponseEntity<Map> response =
-                    restTemplate.exchange(
-                            GITHUB_TOKEN_URL,
-                            HttpMethod.POST,
-                            requestEntity,
-                            Map.class
-                    );
+                } catch (RestClientException e) {
 
-            Map<?, ?> body = response.getBody();
+                        log.error(
+                                        "GitHub token exchange failed",
+                                        e);
 
-            if (body == null
-                    || body.get("access_token") == null) {
-
-                throw new IllegalStateException(
-                        "GitHub token exchange failed"
-                );
-            }
-
-            return body.get("access_token").toString();
-
-        } catch (RestClientException e) {
-
-            log.error(
-                    "GitHub token exchange failed",
-                    e
-            );
-
-            throw new IllegalStateException(
-                    "Failed to exchange GitHub OAuth code",
-                    e
-            );
-        }
-    }
-
-    // ------------------------------------------------------------------------
-    // Fetch GitHub Profile
-    // ------------------------------------------------------------------------
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> fetchGitHubProfile(
-            String githubAccessToken
-    ) {
-
-        try {
-
-            HttpHeaders headers = new HttpHeaders();
-
-            headers.setBearerAuth(githubAccessToken);
-
-            headers.setAccept(
-                    List.of(
-                            MediaType.valueOf(
-                                    "application/vnd.github+json"
-                            )
-                    )
-            );
-
-            headers.set(
-                    "X-GitHub-Api-Version",
-                    "2022-11-28"
-            );
-
-            HttpEntity<Void> requestEntity =
-                    new HttpEntity<>(headers);
-
-            ResponseEntity<Map> response =
-                    restTemplate.exchange(
-                            GITHUB_USER_URL,
-                            HttpMethod.GET,
-                            requestEntity,
-                            Map.class
-                    );
-
-            Map<String, Object> profile =
-                    response.getBody();
-
-            if (profile == null) {
-
-                throw new IllegalStateException(
-                        "GitHub profile response is empty"
-                );
-            }
-
-            return profile;
-
-        } catch (RestClientException e) {
-
-            log.error(
-                    "Failed to fetch GitHub user profile",
-                    e
-            );
-
-            throw new IllegalStateException(
-                    "Failed to fetch GitHub profile",
-                    e
-            );
-        }
-    }
-
-    // ------------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------------
-
-    private String urlEncode(String value) {
-
-        return URLEncoder.encode(
-                value,
-                StandardCharsets.UTF_8
-        );
-    }
-
-    private Long toLong(Object value) {
-
-        if (value instanceof Integer i) {
-            return i.longValue();
+                        throw new IllegalStateException(
+                                        "Failed to exchange GitHub OAuth code",
+                                        e);
+                }
         }
 
-        if (value instanceof Long l) {
-            return l;
+        // ------------------------------------------------------------------------
+        // Fetch GitHub Profile
+        // ------------------------------------------------------------------------
+
+        private String fetchPrimaryEmail(String githubAccessToken) {
+                
+                try {
+                        HttpHeaders headers = new HttpHeaders();
+
+                        headers.setBearerAuth(githubAccessToken);
+
+                        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+
+                        HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+
+                        @SuppressWarnings("unchecked")
+                        ResponseEntity<List<Map<String, Object>>> response = restTemplate.exchange(
+                                        GITHUB_EMAIL_URL,
+                                        HttpMethod.GET,
+                                        requestEntity,
+                                        new ParameterizedTypeReference<>() {});
+
+                        List<Map<String, Object>> emails = response.getBody();
+
+                        if (emails == null) {
+                                return null;
+                        }
+
+                        for (Map<String, Object> email : emails) {
+
+                                Boolean primary = (Boolean) email.get("primary");
+
+                                if (primary != null && primary) {
+
+                                        return (String) email.get("email");
+                                }
+                        }
+
+                        return null;
+
+                } catch (RestClientException e) {
+
+                        log.warn("Failed to fetch primary GitHub email", e);
+                        return null;
+                }
+        }
+// GLOBAL GITHUB EMAIL FETCHING FOR MULTIPLE EMAILS
+        private Map<String, Object> fetchGitHubProfile(
+                        String githubAccessToken) {
+
+                try {
+
+                        HttpHeaders headers = new HttpHeaders();
+
+                        headers.setBearerAuth(githubAccessToken);
+
+                        headers.setAccept(List.of(MediaType.valueOf("application/vnd.github+json")));
+
+                        headers.set("X-GitHub-Api-Version","2022-11-28");
+
+                        HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+
+                        ResponseEntity<Map> response = restTemplate.exchange(
+                                        GITHUB_USER_URL,
+                                        HttpMethod.GET,
+                                        requestEntity,
+                                        new ParameterizedTypeReference<>() {
+                                        });
+
+                        Map<String, Object> profile = response.getBody();
+
+                        if (profile == null) {
+
+                                throw new IllegalStateException("GitHub profile response is empty");
+                        }
+
+                        return profile;
+
+                } catch (RestClientException e) {
+
+                        log.error("Failed to fetch GitHub user profile",e);
+
+                        throw new IllegalStateException("Failed to fetch GitHub profile",e);
+                }
         }
 
-        if (value instanceof String s) {
-            return Long.parseLong(s);
+        // ------------------------------------------------------------------------
+        // Helpers
+        // ------------------------------------------------------------------------
+
+        private String urlEncode(String value) {
+
+                return URLEncoder.encode(
+                                value,
+                                StandardCharsets.UTF_8);
         }
 
-        return null;
-    }
+        private Long toLong(Object value) {
+
+                if (value instanceof Integer i) {
+                        return i.longValue();
+                }
+
+                if (value instanceof Long l) {
+                        return l;
+                }
+
+                if (value instanceof String s) {
+                        return Long.parseLong(s);
+                }
+
+                return null;
+        }
 }

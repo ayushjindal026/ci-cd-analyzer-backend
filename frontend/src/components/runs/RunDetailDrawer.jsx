@@ -195,12 +195,12 @@ function MetaGrid({ run }) {
 //
 // Props:
 //   run        — the PipelineRun object (from table row)
-//   repoId     — number (used for API calls)
+//   repositoryId     — number (used for API calls)
 //   open       — boolean
 //   onClose    — () => void
 //   demoMode   — boolean (skips API calls, uses demo data)
 // ═════════════════════════════════════════════════════════════════════════════
-export function RunDetailDrawer({ run: baseRun, repoId, open, onClose, demoMode = false }) {
+export function RunDetailDrawer({ run: baseRun, repositoryId, open, onClose, demoMode = false }) {
     const { toast } = useToast() ?? {}
     const [analysis, setAnalysis] = useState(null)
     const [loadingA, setLoadingA] = useState(false)
@@ -216,7 +216,7 @@ export function RunDetailDrawer({ run: baseRun, repoId, open, onClose, demoMode 
     // Fetch analysis when drawer opens (real mode only)
     useEffect(() => {
         if (!open || !baseRun || demoMode) return
-        const rid = repoId ?? baseRun.repositoryId ?? baseRun.repoId
+        const rid = repositoryId ?? baseRun.repositoryId ?? baseRun.repositoryId
         const runId = baseRun.id
         if (!rid || !runId) return
 
@@ -248,7 +248,7 @@ export function RunDetailDrawer({ run: baseRun, repoId, open, onClose, demoMode 
 
     const handleTrigger = async () => {
         if (!baseRun || demoMode) return
-        const rid = repoId ?? baseRun.repositoryId ?? baseRun.repoId
+        const rid = repositoryId ?? baseRun.repositoryId ?? baseRun.repositoryId
         setTriggering(true)
         try {
             await runApi.analyse(rid, baseRun.id)

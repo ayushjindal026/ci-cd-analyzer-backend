@@ -4,19 +4,19 @@
 import { useState, useEffect } from 'react'
 import { repoApi } from '@/api/client'
 
-export function useSingleRepo(repoId) {
+export function useSingleRepo(repositoryId) {
     const [repo, setRepo] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
 
     useEffect(() => {
-        if (!repoId) return
+        if (!repositoryId) return
         setLoading(true)
-        repoApi.get(repoId)
+        repoApi.get(repositoryId)
             .then(r => setRepo(r.data))
             .catch(e => setError(e.response?.data?.message ?? 'Failed to load repository'))
             .finally(() => setLoading(false))
-    }, [repoId])
+    }, [repositoryId])
 
     return { repo, loading, error }
 }

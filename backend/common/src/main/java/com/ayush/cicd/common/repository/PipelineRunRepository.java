@@ -61,7 +61,7 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
             FROM PipelineRun r
             WHERE r.repository.id = :repoId
               AND r.startedAt >= :since
-              AND r.status != 'IN_PROGRESS'
+              AND r.status != 'QUEUED'
             """)
     long countCompletedByRepositoryIdSince(
             @Param("repoId") Long repoId,
@@ -85,7 +85,7 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
             SELECT DISTINCT r
             FROM PipelineRun r
             WHERE r.repository.id = :repoId
-              AND r.status = 'FAILURE'
+              AND r.status = 'FAILED'
               AND r.headSha IS NOT NULL
               AND EXISTS (
                   SELECT 1

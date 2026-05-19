@@ -6,37 +6,37 @@ import { useState, useEffect, useCallback } from 'react'
 import { repoApi, runApi } from '@/api/client'
 
 /**
- * Fetch runs for a specific repo, or aggregate across all repos if no repoId.
+ * Fetch runs for a specific repo, or aggregate across all repos if no repositoryId.
  * Swagger: GET /api/v1/repositories/{id}/runs
  */
-export function useRuns({ repoId, page = 0, size = 15, status } = {}) {
-  const [runs,    setRuns]    = useState([])
-  const [total,   setTotal]   = useState(0)
+export function useRuns({ repositoryId, page = 0, size = 15, status } = {}) {
+  const [runs, setRuns] = useState([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState(null)
+  const [error, setError] = useState(null)
 
   const fetch = useCallback(() => {
     setLoading(true)
 
-    const doFetch = repoId
-      ? runApi.repoRuns(repoId, { page, size, status })
-      : // no repoId → fetch all repos then their runs
-        repoApi.list().then(async reposRes => {
-          const all = reposRes.data ?? []
-          if (!all.length) return { data: [] }
-          const results = await Promise.all(
-            all.map(r => runApi.repoRuns(r.id, { page: 0, size: 5 })
-              .then(res => (res.data?.content ?? res.data ?? []).map(run => ({
-                ...run, repoName: r.fullName ?? r.name,
-              })))
-              .catch(() => [])
-            )
+    const doFetch = repositoryId
+      ? runApi.repoRuns(repositoryId, { page, size, status })
+      : // no repositoryId → fetch all repos then their runs
+      repoApi.list().then(async reposRes => {
+        const all = reposres.data ?? []
+        if (!all.length) return { data: [] }
+        const results = await Promise.all(
+          all.map(r => runApi.repoRuns(r.id, { page: 0, size: 5 })
+            .then(res => (res.data?.content ?? res.data ?? []).map(run => ({
+              ...run, repoName: r.fullName ?? r.name,
+            })))
+            .catch(() => [])
           )
-          const flat = results.flat().sort((a, b) =>
-            new Date(b.startedAt ?? 0) - new Date(a.startedAt ?? 0)
-          )
-          return { data: flat }
-        })
+        )
+        const flat = results.flat().sort((a, b) =>
+          new Date(b.startedAt ?? 0) - new Date(a.startedAt ?? 0)
+        )
+        return { data: flat }
+      })
 
     doFetch
       .then(res => {
@@ -50,7 +50,7 @@ export function useRuns({ repoId, page = 0, size = 15, status } = {}) {
       })
       .catch(e => setError(e.response?.data?.message ?? 'Failed to load runs'))
       .finally(() => setLoading(false))
-  }, [repoId, page, size, status])
+  }, [repositoryId, page, size, status])
 
   useEffect(() => { fetch() }, [fetch])
 
@@ -59,26 +59,26 @@ export function useRuns({ repoId, page = 0, size = 15, status } = {}) {
 
 /**
  * Single run detail + its AI analysis
- * Swagger: GET /api/v1/repositories/{repoId}/runs/{runId}
- *          GET /api/v1/repositories/{repoId}/runs/{runId}/analysis
+ * Swagger: GET /api/v1/repositories/{repositoryId}/runs/{runId}
+ *          GET /api/v1/repositories/{repositoryId}/runs/{runId}/analysis
  */
-export function useRunDetail(repoId, runId) {
-  const [run,      setRun]      = useState(null)
+export function useRunDetail(repositoryId, runId) {
+  const [run, setRun] = useState(null)
   const [analysis, setAnalysis] = useState(null)
-  const [loading,  setLoading]  = useState(true)
-  const [error,    setError]    = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
-    if (!repoId || !runId) return
+    if (!repositoryId || !runId) return
     setLoading(true)
     Promise.all([
-      runApi.get(repoId, runId),
-      runApi.analysis(repoId, runId).catch(() => ({ data: null })),
+      runApi.get(repositoryId, runId),
+      runApi.analysis(repositoryId, runId).catch(() => ({ data: null })),
     ])
       .then(([r, a]) => { setRun(r.data); setAnalysis(a.data) })
       .catch(e => setError(e.response?.data?.message ?? 'Failed to load run'))
       .finally(() => setLoading(false))
-  }, [repoId, runId])
+  }, [repositoryId, runId])
 
   return { run, analysis, loading, error }
 }

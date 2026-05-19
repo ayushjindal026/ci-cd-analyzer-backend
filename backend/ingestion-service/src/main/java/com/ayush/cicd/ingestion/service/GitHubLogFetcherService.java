@@ -52,12 +52,12 @@ public class GitHubLogFetcherService {
      * Fetch logs for a specific run and trigger analysis immediately.
      * Called when user clicks "AI Diagnosis" in the UI.
      */
-    public void fetchAndAnalyse(Long repoId, Long runId) {
+    public void fetchAndAnalyse(Long repositoryId, Long runId) {
         PipelineRun run = runRepo.findById(runId)
                 .orElseThrow(() -> new IllegalArgumentException("Run not found: " + runId));
 
-        MonitoredRepository repo = repoRepo.findById(repoId)
-                .orElseThrow(() -> new IllegalArgumentException("Repo not found: " + repoId));
+        MonitoredRepository repo = repoRepo.findById(repositoryId)
+                .orElseThrow(() -> new IllegalArgumentException("Repo not found: " + repositoryId));
 
         if (run.getExternalRunId() == null) {
             log.warn("Run {} has no githubRunId — cannot fetch logs", runId);

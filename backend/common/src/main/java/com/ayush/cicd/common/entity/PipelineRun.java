@@ -81,6 +81,10 @@ public class PipelineRun {
 
     // ── Intelligence layer fields ─────────────────────────────────────────────
 
+    @Column(name = "created_at", nullable = false)
+@Builder.Default
+private Instant createdAt = Instant.now();
+
     @Column(name = "logs_fetched")
     @Builder.Default
     private boolean logsFetched = false;

@@ -5,9 +5,9 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { repoApi, runApi } from '@/api/client'
 
 /**
- * Fetch runs. If repoId provided → single repo. Else → aggregate all repos (up to 5 latest each).
+ * Fetch runs. If repositoryId provided → single repo. Else → aggregate all repos (up to 5 latest each).
  */
-export function useRuns({ repoId, page = 0, size = 15, status } = {}) {
+export function useRuns({ repositoryId, page = 0, size = 15, status } = {}) {
     const [runs, setRuns] = useState([])
     const [total, setTotal] = useState(0)
     const [loading, setLoading] = useState(true)
@@ -21,8 +21,8 @@ export function useRuns({ repoId, page = 0, size = 15, status } = {}) {
     const fetch = useCallback(() => {
         setLoading(true); setError(null)
 
-        const doFetch = repoId
-            ? runApi.repoRuns(repoId, params)
+        const doFetch = repositoryId
+            ? runApi.repoRuns(repositoryId, params)
             : repoApi.list().then(async res => {
                 const repos = Array.isArray(res.data) ? res.data : res.data?.content ?? []
                 if (!repos.length) return { data: [] }
@@ -54,7 +54,7 @@ export function useRuns({ repoId, page = 0, size = 15, status } = {}) {
             })
             .catch(e => setError(e.response?.data?.message ?? 'Failed to load pipeline runs'))
             .finally(() => setLoading(false))
-    }, [repoId, JSON.stringify(params)]) // eslint-disable-line
+    }, [repositoryId, JSON.stringify(params)]) // eslint-disable-line
 
     useEffect(() => { fetch() }, [fetch])
 
@@ -64,23 +64,23 @@ export function useRuns({ repoId, page = 0, size = 15, status } = {}) {
 /**
  * Single run detail + AI analysis.
  */
-export function useRunDetail(repoId, runId) {
+export function useRunDetail(repositoryId, runId) {
     const [run, setRun] = useState(null)
     const [analysis, setAnalysis] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
 
     useEffect(() => {
-        if (!repoId || !runId) return
+        if (!repositoryId || !runId) return
         setLoading(true); setError(null); setAnalysis(null)
         Promise.all([
-            runApi.get(repoId, runId),
-            runApi.analysis(repoId, runId).catch(() => ({ data: null })),
+            runApi.get(repositoryId, runId),
+            runApi.analysis(repositoryId, runId).catch(() => ({ data: null })),
         ])
             .then(([r, a]) => { setRun(r.data); setAnalysis(a.data) })
             .catch(e => setError(e.response?.data?.message ?? 'Failed to load run details'))
             .finally(() => setLoading(false))
-    }, [repoId, runId])
+    }, [repositoryId, runId])
 
     return { run, analysis, loading, error }
 }

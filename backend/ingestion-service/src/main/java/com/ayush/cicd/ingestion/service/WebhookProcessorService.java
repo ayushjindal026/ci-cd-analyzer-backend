@@ -4,6 +4,7 @@ import com.ayush.cicd.ingestion.service.GitHubLogFetcherService;
 import com.ayush.cicd.common.entity.MonitoredRepository;
 import com.ayush.cicd.common.entity.PipelineRun;
 import com.ayush.cicd.common.enums.BuildStatus;
+import com.ayush.cicd.common.enums.PipelineSource;
 import com.ayush.cicd.common.repository.MonitoredRepositoryRepository;
 import com.ayush.cicd.common.repository.PipelineRunRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -138,9 +139,10 @@ public class WebhookProcessorService {
                 String owner = parts[0];
                 String repoName = parts[1];
 
-                Optional<MonitoredRepository> repoOpt = repoRepo.findByOwnerAndRepoName(
+                Optional<MonitoredRepository> repoOpt = repoRepo.findByOwnerAndRepoNameAndSource(
                                 owner,
-                                repoName);
+                                repoName,
+                                PipelineSource.GITHUB_ACTIONS);
 
                 if (repoOpt.isEmpty()) {
 
@@ -204,9 +206,21 @@ public class WebhookProcessorService {
                                 run.setDurationMs(durationMs);
                         }
                 }
+                // Save run
+                log.info(
+                                "Saving pipeline run: repo={} externalRunId={} status={}",
+                                repo.getFullName(),
+                                githubRunId,
+                                run.getStatus());
 
                 // Save run
                 PipelineRun savedRun = runRepo.save(run);
+
+                log.info(
+                                "Saved pipeline run: repo={} externalRunId={} status={}",
+                                repo.getFullName(),
+                                githubRunId,
+                                savedRun.getStatus());
 
                 // Trigger AI analysis
                 if ("completed".equalsIgnoreCase(action)
@@ -296,32 +310,49 @@ public class WebhookProcessorService {
         // =====================================================
 
         private String normaliseStatus(
-                        String conclusion,
-                        String status) {
+        String conclusion,
+        String status) {
 
-                if ("success".equalsIgnoreCase(conclusion)) {
-                        return "success";
-                }
+        if (conclusion != null) {
 
-                if ("failure".equalsIgnoreCase(conclusion)) {
-                        return "failed";
-                }
+                return switch (conclusion.toLowerCase()) {
 
-                if ("cancelled".equalsIgnoreCase(conclusion)) {
-                        return "cancelled";
-                }
+                case "success" ->
+                        "success";
 
-                if ("in_progress".equalsIgnoreCase(status)) {
-                        return "running";
-                }
+                case "failure" ->
+                        "failed";
 
-                if ("queued".equalsIgnoreCase(status)) {
-                        return "pending";
-                }
+                case "cancelled" ->
+                        "cancelled";
 
-                return conclusion != null
-                                ? conclusion.toLowerCase()
-                                : "unknown";
+                case "timed_out" ->
+                        "failed";
+
+                default ->
+                        conclusion.toLowerCase();
+                };
+        }
+
+        if (status != null) {
+
+                return switch (status.toLowerCase()) {
+
+                case "queued" ->
+                        "pending";
+
+                case "in_progress" ->
+                        "running";
+
+                case "completed" ->
+                        "success";
+
+                default ->
+                        status.toLowerCase();
+                };
+        }
+
+        return "unknown";
         }
 
         private BuildStatus toBuildStatus(

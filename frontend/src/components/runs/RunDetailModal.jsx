@@ -19,9 +19,9 @@ function fmtDur(s) {
 
 export function RunDetailModal({ run: baseRun, open, onClose }) {
     const { toast } = useToast()
-    const repoId = baseRun?.repositoryId ?? baseRun?.repoId
+    const repositoryId = baseRun?.repositoryId ?? baseRun?.repositoryId
     const runId = baseRun?.id
-    const { run, analysis, loading } = useRunDetail(repoId, runId)
+    const { run, analysis, loading } = useRunDetail(repositoryId, runId)
     const display = run ?? baseRun
 
     const [triggering, setTriggering] = useState(false)
@@ -32,10 +32,10 @@ export function RunDetailModal({ run: baseRun, open, onClose }) {
     const isFailed = ['failed', 'failure', 'FAILED', 'FAILURE'].includes(display?.status ?? '')
 
     const handleAnalyse = async () => {
-        if (!repoId || !runId) return
+        if (!repositoryId || !runId) return
         setTriggering(true)
         try {
-            await runApi.analyse(repoId, runId)
+            await runApi.analyse(repositoryId, runId)
             setTriggered(true)
             toast.success('AI analysis queued', 'Results will appear in the Insights page shortly.')
         } catch (e) {

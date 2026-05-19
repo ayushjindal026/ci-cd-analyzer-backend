@@ -12,8 +12,8 @@ import java.time.Instant;
  */
 @Entity
 @Table(name = "run_analyses", indexes = {
-    @Index(name = "idx_ra_run",  columnList = "run_id"),
-    @Index(name = "idx_ra_repo", columnList = "repository_id"),
+        @Index(name = "idx_ra_run", columnList = "run_id"),
+        @Index(name = "idx_ra_repo", columnList = "repository_id"),
 })
 @Data
 @Builder
@@ -64,7 +64,7 @@ public class RunAnalysis {
     private String estimatedFixTime;
 
     @Column(length = 5)
-    private String priority;            // P1–P4
+    private String priority; // P1–P4
 
     @Column(name = "similar_failures_count")
     private int similarFailuresCount;

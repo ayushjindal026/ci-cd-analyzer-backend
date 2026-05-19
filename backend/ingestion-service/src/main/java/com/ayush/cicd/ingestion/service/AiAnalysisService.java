@@ -49,11 +49,11 @@ public class AiAnalysisService {
     @Async("aiTaskExecutor")
     @Retryable(maxAttempts = 2, backoff = @Backoff(delay = 2000))
     public RunAnalysis analyse(
-            Long repoId, Long runId, String stage,
+            Long repositoryId, Long runId, String stage,
             String rawLog, FailureStats stats) {
         try {
             ParsedLog parsed = logParser.parse(rawLog, stage);
-            FailureRecord record = buildTempRecord(repoId, runId, parsed);
+            FailureRecord record = buildTempRecord(repositoryId, runId, parsed);
             List<FailureRecord> similar = classifier.findSimilar(record, 3);
 
             String prompt = buildPrompt(parsed, record, similar, stats);
@@ -61,7 +61,7 @@ public class AiAnalysisService {
 
             RunAnalysis analysis = RunAnalysis.builder()
                     .runId(runId)
-                    .repositoryId(repoId)
+                    .repositoryId(repositoryId)
                     .stage(stage)
                     .severity(record.getSeverity())
                     .category(record.getCategory())
@@ -86,7 +86,7 @@ public class AiAnalysisService {
         } catch (Exception e) {
             log.error("AI analysis failed for run {}: {}", runId, e.getMessage(), e);
             return analysisRepo.save(RunAnalysis.builder()
-                    .runId(runId).repositoryId(repoId).stage(stage)
+                    .runId(runId).repositoryId(repositoryId).stage(stage)
                     .summary("Analysis failed: " + e.getMessage())
                     .severity("MEDIUM").analysedAt(Instant.now()).modelUsed("error")
                     .build());
@@ -240,12 +240,12 @@ public class AiAnalysisService {
     }
 
     /** Lightweight record object used only for prompt building — not persisted. */
-    private FailureRecord buildTempRecord(Long repoId, Long runId, ParsedLog parsed) {
+    private FailureRecord buildTempRecord(Long repositoryId, Long runId, ParsedLog parsed) {
         com.ayush.cicd.ingestion.service.FailureClassifierService.Severity sev = parsed.isOom() || parsed.isTimeout()
                 ? com.ayush.cicd.ingestion.service.FailureClassifierService.Severity.CRITICAL
                 : com.ayush.cicd.ingestion.service.FailureClassifierService.Severity.MEDIUM;
         return FailureRecord.builder()
-                .runId(runId).repositoryId(repoId)
+                .runId(runId).repositoryId(repositoryId)
                 .stage(parsed.getStage())
                 .category(parsed.getCategory().name())
                 .severity(sev.name())

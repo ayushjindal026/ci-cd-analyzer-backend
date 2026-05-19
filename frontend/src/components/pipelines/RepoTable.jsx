@@ -145,7 +145,7 @@ export function RepoTable({ repos, loading, onSync, onRemove, onAddClick }) {
                             {/* Actions */}
                             <td>
                                 <div className="flex items-center justify-end gap-1 pr-1">
-                                    <Link to={`/runs?repoId=${repo.id}`} className="btn-ghost p-1.5 rounded-md" title="View runs">
+                                    <Link to={`/runs?repositoryId=${repo.id}`} className="btn-ghost p-1.5 rounded-md" title="View runs">
                                         <Activity size={14} />
                                     </Link>
                                     <button className="btn-ghost p-1.5 rounded-md" title="Sync now"

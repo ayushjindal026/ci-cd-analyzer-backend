@@ -27,9 +27,9 @@ function StageBars({ stages = [], status }) {
                 const st = (s.status ?? '').toUpperCase()
                 return (
                     <div key={i} className={`w-2 h-4 rounded-sm flex-shrink-0 ${st === 'SUCCESS' ? 'bg-emerald-500' :
-                            st === 'FAILED' ? 'bg-red-500' :
-                                st === 'RUNNING' ? 'bg-blue-500 animate-pulse' :
-                                    st === 'CANCELLED' ? 'bg-gray-400' : 'bg-gray-200 dark:bg-gray-700'
+                        st === 'FAILED' ? 'bg-red-500' :
+                            st === 'RUNNING' ? 'bg-blue-500 animate-pulse' :
+                                st === 'CANCELLED' ? 'bg-gray-400' : 'bg-gray-200 dark:bg-gray-700'
                         }`} />
                 )
             })}
@@ -104,11 +104,11 @@ function Pagination({ page, totalPages, onChange }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // Main component
 // Props:
-//   repoId     — filter to a single repo (optional, null = all)
+//   repositoryId     — filter to a single repo (optional, null = all)
 //   statusFilter — 'all' | 'SUCCESS' | 'FAILED' | 'RUNNING' | 'PENDING'
 //   compact    — reduced padding for embedding in Dashboard
 // ═══════════════════════════════════════════════════════════════════════════════
-export function RunsTable({ repoId, statusFilter = 'all', compact = false }) {
+export function RunsTable({ repositoryId, statusFilter = 'all', compact = false }) {
     const [runs, setRuns] = useState([])
     const [total, setTotal] = useState(0)
     const [page, setPage] = useState(0)
@@ -119,7 +119,7 @@ export function RunsTable({ repoId, statusFilter = 'all', compact = false }) {
     const PAGE_SIZE = compact ? 8 : 15
 
     const fetch = useCallback(async () => {
-        if (!repoId) return
+        if (!repositoryId) return
         setLoading(true); setError(null)
         try {
             const params = {
@@ -127,7 +127,7 @@ export function RunsTable({ repoId, statusFilter = 'all', compact = false }) {
                 size: PAGE_SIZE,
                 ...(statusFilter !== 'all' && { status: statusFilter }),
             }
-            const res = await runApi.repoRuns(repoId, params)
+            const res = await runApi.repoRuns(repositoryId, params)
             const data = res.data
 
             // Handles both PagedResponse and plain array
@@ -141,10 +141,10 @@ export function RunsTable({ repoId, statusFilter = 'all', compact = false }) {
         } finally {
             setLoading(false)
         }
-    }, [repoId, page, statusFilter, PAGE_SIZE])
+    }, [repositoryId, page, statusFilter, PAGE_SIZE])
 
     useEffect(() => { fetch() }, [fetch])
-    useEffect(() => { setPage(0) }, [repoId, statusFilter])
+    useEffect(() => { setPage(0) }, [repositoryId, statusFilter])
 
     const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -281,7 +281,7 @@ export function RunsTable({ repoId, statusFilter = 'all', compact = false }) {
             {/* Run detail drawer */}
             <RunDetailDrawer
                 run={selectedRun}
-                repoId={repoId}
+                repositoryId={repositoryId}
                 open={selectedRun !== null}
                 onClose={() => setSelected(null)}
             />
