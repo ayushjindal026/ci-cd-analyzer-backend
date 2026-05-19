@@ -19,8 +19,13 @@ export default function OAuthSuccess() {
         const params = new URLSearchParams(window.location.search)
 
         // New dual-token format
-        const accessToken = params.get('access_token')
-        const refreshToken = params.get('refresh_token')
+        const accessToken = decodeURIComponent(
+            params.get('access_token') || ''
+        )
+
+        const refreshToken = decodeURIComponent(
+            params.get('refresh_token') || ''
+        )
 
         // Legacy single-token format (backwards compat)
         const legacyToken = params.get('token')

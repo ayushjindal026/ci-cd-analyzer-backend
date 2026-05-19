@@ -11,10 +11,10 @@ import java.time.Instant;
  */
 @Entity
 @Table(name = "failure_records", indexes = {
-    @Index(name = "idx_fr_repo",      columnList = "repository_id"),
-    @Index(name = "idx_fr_signature", columnList = "signature"),
-    @Index(name = "idx_fr_occurred",  columnList = "occurred_at"),
-    @Index(name = "idx_fr_cat_stage", columnList = "category, stage"),
+        @Index(name = "idx_fr_repo", columnList = "repository_id"),
+        @Index(name = "idx_fr_signature", columnList = "signature"),
+        @Index(name = "idx_fr_occurred", columnList = "occurred_at"),
+        @Index(name = "idx_fr_cat_stage", columnList = "category, stage"),
 })
 @Data
 @Builder

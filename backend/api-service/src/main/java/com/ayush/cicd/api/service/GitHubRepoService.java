@@ -69,10 +69,14 @@ public class GitHubRepoService {
 
         } catch (Exception e) {
 
-            log.error(
-                    "GitHub repository fetch failed for userId={}: {}",
+            log.error("""
+                    GitHub repo fetch failed:
+                    userId={}
+                    error={}
+                    """,
                     currentUser.getId(),
-                    e.getMessage());
+                    e.getMessage(),
+                    e);
 
             return List.of();
         }

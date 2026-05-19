@@ -65,9 +65,34 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(
             @NonNull HttpServletRequest request,
             @NonNull HttpServletResponse response,
-            @NonNull FilterChain filterChain) throws ServletException, IOException {
+            @NonNull FilterChain filterChain)
+            throws ServletException, IOException {
 
         String requestPath = request.getServletPath();
+
+        // --------------------------------------------------------------------
+        // Debug Logs
+        // --------------------------------------------------------------------
+
+        System.out.println("================================================");
+        System.out.println("REQUEST URI: " + request.getRequestURI());
+        System.out.println("AUTH HEADER: " + request.getHeader("Authorization"));
+        System.out.println("================================================");
+
+        // --------------------------------------------------------------------
+        // Skip OAuth/Auth endpoints
+        // --------------------------------------------------------------------
+
+        if (
+                requestPath.startsWith("/api/v1/auth/github") ||
+                requestPath.startsWith("/oauth2") ||
+                requestPath.startsWith("/login/oauth2")
+        ) {
+
+            filterChain.doFilter(request, response);
+
+            return;
+        }
 
         // --------------------------------------------------------------------
         // Skip Swagger/OpenAPI endpoints
@@ -89,29 +114,37 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // No token present
         if (!StringUtils.hasText(token)) {
 
-            filterChain.doFilter(request, response);
-
-            return;
-        }
-
-        // --------------------------------------------------------------------
-        // Validate token
-        // --------------------------------------------------------------------
-
-        if (!jwtService.isTokenValid(token)) {
-
-            log.debug(
-                    "Invalid JWT token for request: {}",
-                    request.getRequestURI());
-
-            SecurityContextHolder.clearContext();
+            System.out.println("NO JWT TOKEN FOUND");
 
             filterChain.doFilter(request, response);
 
             return;
         }
+
+        System.out.println("JWT TOKEN: " + token);
 
         try {
+
+            // ----------------------------------------------------------------
+            // Validate token
+            // ----------------------------------------------------------------
+
+            if (!jwtService.isTokenValid(token)) {
+
+                System.out.println("JWT TOKEN INVALID");
+
+                log.debug(
+                        "Invalid JWT token for request: {}",
+                        request.getRequestURI());
+
+                SecurityContextHolder.clearContext();
+
+                filterChain.doFilter(request, response);
+
+                return;
+            }
+
+            System.out.println("JWT TOKEN VALID");
 
             // ----------------------------------------------------------------
             // Avoid re-authentication
@@ -123,23 +156,29 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 Long userId = jwtService.getUserId(token);
 
+                System.out.println("USER ID FROM JWT: " + userId);
+
                 User user = userRepository.findById(userId)
                         .orElse(null);
 
                 if (user != null) {
 
-                    UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                            user,
-                            null,
-                            List.of(
-                                    new SimpleGrantedAuthority(
-                                            "ROLE_USER")));
+                    System.out.println("AUTHENTICATED USER: " + user.getUsername());
+
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(
+                                    user,
+                                    null,
+                                    List.of(
+                                            new SimpleGrantedAuthority(
+                                                    "ROLE_USER")));
 
                     authentication.setDetails(
                             new WebAuthenticationDetailsSource()
                                     .buildDetails(request));
 
-                    SecurityContextHolder.getContext()
+                    SecurityContextHolder
+                            .getContext()
                             .setAuthentication(authentication);
 
                     log.debug(
@@ -148,6 +187,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             request.getRequestURI());
 
                 } else {
+
+                    System.out.println("USER NOT FOUND IN DATABASE");
 
                     log.debug(
                             "JWT valid but user not found. userId={}",
@@ -158,6 +199,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
         } catch (Exception e) {
+
+            System.out.println("JWT AUTH ERROR:");
+            e.printStackTrace();
 
             log.error(
                     "JWT authentication failed: {}",

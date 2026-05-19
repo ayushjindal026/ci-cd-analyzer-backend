@@ -3,123 +3,256 @@ import { tokenStorage, tryRefresh } from '@/context/AuthContext'
 
 const api = axios.create({
   baseURL: '/api/v1',
-  timeout: 20_000,
-  headers: { 'Content-Type': 'application/json' },
+  timeout: 20000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
 })
 
-// ── Inject access token ───────────────────────────────────────────────────────
-api.interceptors.request.use(cfg => {
-  const token = tokenStorage.getAccess()
-  if (token) cfg.headers['Authorization'] = `Bearer ${token}`
-  return cfg
-}, err => Promise.reject(err))
+// ─────────────────────────────────────────────────────────────────────────────
+// Inject JWT Access Token
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ── 401 → try refresh once → retry original request ──────────────────────────
+api.interceptors.request.use(
+  config => {
+
+    const token = tokenStorage.getAccess()
+
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+
+    return config
+  },
+
+  error => Promise.reject(error)
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 401 Handling + Refresh Token Rotation
+// ─────────────────────────────────────────────────────────────────────────────
+
 let isRefreshing = false
-let failedQueue = []   // queued requests waiting for refresh
 
-const processQueue = (error) => {
-  failedQueue.forEach(p => error ? p.reject(error) : p.resolve())
+let failedQueue = []
+
+const processQueue = error => {
+
+  failedQueue.forEach(promise => {
+
+    if (error) {
+      promise.reject(error)
+    } else {
+      promise.resolve()
+    }
+  })
+
   failedQueue = []
 }
 
 api.interceptors.response.use(
-  res => res,
-  async err => {
-    const original = err.config
 
-    if (err.response?.status !== 401 || original._retry) {
-      return Promise.reject(err)
+  response => response,
+
+  async error => {
+
+    const originalRequest = error.config
+
+    // ------------------------------------------------------------
+    // Only handle 401 once
+    // ------------------------------------------------------------
+
+    if (
+      error.response?.status !== 401 ||
+      originalRequest._retry
+    ) {
+      return Promise.reject(error)
     }
 
-    // Already refreshing — queue this request until refresh completes
+    // ------------------------------------------------------------
+    // Queue requests during refresh
+    // ------------------------------------------------------------
+
     if (isRefreshing) {
+
       return new Promise((resolve, reject) => {
+
         failedQueue.push({ resolve, reject })
+
       }).then(() => {
-        original.headers['Authorization'] = `Bearer ${tokenStorage.getAccess()}`
-        return api(original)
-      }).catch(e => Promise.reject(e))
+
+        originalRequest.headers.Authorization =
+          `Bearer ${tokenStorage.getAccess()}`
+
+        return api(originalRequest)
+
+      }).catch(err => Promise.reject(err))
     }
 
-    original._retry = true
+    originalRequest._retry = true
+
     isRefreshing = true
 
-    const refreshed = await tryRefresh()
+    try {
 
-    isRefreshing = false
+      const refreshed = await tryRefresh()
 
-    if (refreshed) {
-      processQueue(null)
-      original.headers['Authorization'] = `Bearer ${tokenStorage.getAccess()}`
-      return api(original)
-    } else {
+      isRefreshing = false
+
+      if (refreshed) {
+
+        processQueue(null)
+
+        originalRequest.headers.Authorization =
+          `Bearer ${tokenStorage.getAccess()}`
+
+        return api(originalRequest)
+      }
+
+      // ----------------------------------------------------------
+      // Refresh failed
+      // ----------------------------------------------------------
+
       processQueue(new Error('Session expired'))
+
       tokenStorage.clear()
+
       window.location.href = '/login'
-      return Promise.reject(err)
+
+      return Promise.reject(error)
+
+    } catch (refreshError) {
+
+      isRefreshing = false
+
+      processQueue(refreshError)
+
+      tokenStorage.clear()
+
+      window.location.href = '/login'
+
+      return Promise.reject(refreshError)
     }
   }
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AUTH
+// AUTH APIs
 // ─────────────────────────────────────────────────────────────────────────────
+
 export const authApi = {
-  me: () => api.get('/auth/me'),
-  refresh: refreshToken => api.post('/auth/refresh', { refresh_token: refreshToken }),
-  logout: (body = {}) => api.post('/auth/logout', body).catch(() => { }),
-  logoutAll: () => api.post('/auth/logout', { logout_all: true }).catch(() => { }),
+
+  me: () =>
+    api.get('/auth/me'),
+
+  refresh: refreshToken =>
+    api.post('/auth/refresh', {
+      refreshToken,
+    }),
+
+  logout: (body = {}) =>
+    api.post('/auth/logout', body),
+
+  logoutAll: () =>
+    api.post('/auth/logout', {
+      logoutAll: true,
+    }),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// REPOSITORIES
+// REPOSITORY APIs
 // ─────────────────────────────────────────────────────────────────────────────
+
 export const repoApi = {
-  list: () => api.get('/repositories'),
-  get: id => api.get(`/repositories/${id}`),
-  add: data => api.post('/repositories', data),
-  remove: id => api.delete(`/repositories/${id}`),
-  sync: id => api.post(`/repositories/${id}/sync`),
-  runs: (id, p) => api.get(`/repositories/${id}/runs`, { params: p }),
-  metrics: id => api.get(`/repositories/${id}/metrics`),
-  analyses: id => api.get(`/repositories/${id}/analyses`),
+
+  list: () =>
+    api.get('/repositories'),
+
+  get: id =>
+    api.get(`/repositories/${id}`),
+
+  add: data =>
+    api.post('/repositories', data),
+
+  remove: id =>
+    api.delete(`/repositories/${id}`),
+
+  sync: id =>
+    api.post(`/repositories/${id}/sync`),
+
+  runs: (id, params) =>
+    api.get(`/repositories/${id}/runs`, {
+      params,
+    }),
+
+  metrics: id =>
+    api.get(`/repositories/${id}/metrics`),
+
+  analyses: id =>
+    api.get(`/repositories/${id}/analyses`),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GITHUB — fetch repos from GitHub to populate the "Connect Repo" modal
-// These calls go through our backend which proxies to GitHub using the user's token
+// GITHUB APIs
 // ─────────────────────────────────────────────────────────────────────────────
+
 export const githubApi = {
-  // GET /api/v1/github/repos — backend fetches from api.github.com/user/repos
-  listUserRepos: (params = {}) => api.get('/github/repos', { params }),
-  // GET /api/v1/github/repos/search?q=name — search user's repos
-  searchRepos: (q) => api.get('/github/repos/search', { params: { q } }),
+
+  listUserRepos: (params = {}) =>
+    api.get('/github/repos', {
+      params,
+    }),
+
+  searchRepos: query =>
+    api.get('/github/repos/search', {
+      params: {
+        q: query,
+      },
+    }),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RUNS
+// PIPELINE RUN APIs
 // ─────────────────────────────────────────────────────────────────────────────
+
 export const runApi = {
-  repoRuns: (repoId, p) => api.get(`/repositories/${repoId}/runs`, { params: p }),
-  get: (repoId, runId) => api.get(`/repositories/${repoId}/runs/${runId}`),
-  analysis: (repoId, runId) => api.get(`/repositories/${repoId}/runs/${runId}/analysis`),
-  analyse: (repoId, runId) => api.post(`/repositories/${repoId}/runs/${runId}/analyse`),
+
+  repoRuns: (repoId, params) =>
+    api.get(`/repositories/${repoId}/runs`, {
+      params,
+    }),
+
+  get: (repoId, runId) =>
+    api.get(`/repositories/${repoId}/runs/${runId}`),
+
+  analysis: (repoId, runId) =>
+    api.get(`/repositories/${repoId}/runs/${runId}/analysis`),
+
+  analyse: (repoId, runId) =>
+    api.post(`/repositories/${repoId}/runs/${runId}/analysis`),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ANALYTICS
+// ANALYTICS APIs
 // ─────────────────────────────────────────────────────────────────────────────
+
 export const analyticsApi = {
-  metrics: id => api.get(`/repositories/${id}/metrics`),
+
+  metrics: repoId =>
+    api.get(`/repositories/${repoId}/metrics`),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AI
+// AI APIs
 // ─────────────────────────────────────────────────────────────────────────────
+
 export const aiApi = {
-  trigger: (repoId, runId) => api.post(`/repositories/${repoId}/runs/${runId}/analyse`),
-  getAnalysis: (repoId, runId) => api.get(`/repositories/${repoId}/runs/${runId}/analysis`),
+
+  trigger: (repoId, runId) =>
+    api.post(`/repositories/${repoId}/runs/${runId}/analysis`),
+
+  getAnalysis: (repoId, runId) =>
+    api.get(`/repositories/${repoId}/runs/${runId}/analysis`),
 }
 
 export default api

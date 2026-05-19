@@ -14,7 +14,7 @@
     <artifactId>analytics-service</artifactId>
     <packaging>jar</packaging>
     <name>analytics-service</name>
-    <description>Aggregation logic: success rates, flaky detection, cost estimation</description>
+    <description>Analytics service: success rates, flaky detection, cost estimation</description>
 
     <dependencies>
         <dependency>
@@ -38,6 +38,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
         </dependency>
     </dependencies>
 </project>

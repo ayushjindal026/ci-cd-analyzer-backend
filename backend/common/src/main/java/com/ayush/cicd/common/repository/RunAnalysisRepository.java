@@ -39,4 +39,13 @@ public interface RunAnalysisRepository
         long countByRepositoryIdAndSeverity(
                         Long repositoryId,
                         String severity);
+
+        // =====================================================
+        // Branch Queries
+        // =====================================================
+
+        // Count flaky runs grouped by branch
+        long countByRepositoryIdAndIsFlaky(
+                        Long repositoryId,
+                        boolean isFlaky);
 }

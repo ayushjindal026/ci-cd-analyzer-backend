@@ -8,41 +8,85 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> {
+@Transactional(readOnly = true)
+public interface PipelineRunRepository
+        extends JpaRepository<PipelineRun, Long> {
 
-    // =====================================================
-    // Basic Queries
-    // =====================================================
+    // =========================================================================
+    // BASIC QUERIES
+    // =========================================================================
 
     Page<PipelineRun> findByRepository_IdOrderByStartedAtDesc(
             Long repositoryId,
-            Pageable pageable);
+            Pageable pageable
+    );
 
     List<PipelineRun> findByRepository_Id(
-            Long repositoryId);
+            Long repositoryId
+    );
 
     List<PipelineRun> findByRepository_IdAndStartedAtAfterOrderByStartedAtAsc(
             Long repositoryId,
-            Instant since);
+            Instant since
+    );
 
     Optional<PipelineRun> findByRepository_IdAndExternalRunId(
             Long repositoryId,
-            String externalRunId);
+            String externalRunId
+    );
 
     List<PipelineRun> findByRepository_IdAndStatusAndStartedAtAfter(
             Long repositoryId,
             BuildStatus status,
-            Instant startedAt);
+            Instant startedAt
+    );
 
-    // =====================================================
-    // Metrics Queries
-    // =====================================================
+    Optional<PipelineRun> findTopByRepository_IdOrderByStartedAtDesc(
+            Long repositoryId
+    );
+
+    Optional<PipelineRun> findTopByRepository_IdAndStatusOrderByStartedAtDesc(
+            Long repositoryId,
+            BuildStatus status
+    );
+
+    // =========================================================================
+    // COUNTS
+    // =========================================================================
+
+    long countByRepository_IdAndStartedAtAfter(
+            Long repositoryId,
+            Instant since
+    );
+
+    long countByRepository_IdAndStatusAndStartedAtAfter(
+            Long repositoryId,
+            BuildStatus status,
+            Instant startedAt
+    );
+
+    long countByRepository_IdAndStatus(
+            Long repositoryId,
+            BuildStatus status
+    );
+
+    long countByRepository_IdAndStatusAndStartedAtBetween(
+            Long repositoryId,
+            BuildStatus status,
+            Instant start,
+            Instant end
+    );
+
+    // =========================================================================
+    // METRICS
+    // =========================================================================
 
     @Query("""
             SELECT COUNT(r)
@@ -54,7 +98,8 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
     long countByRepositoryIdAndStatusSince(
             @Param("repoId") Long repoId,
             @Param("status") BuildStatus status,
-            @Param("since") Instant since);
+            @Param("since") Instant since
+    );
 
     @Query("""
             SELECT COUNT(r)
@@ -65,21 +110,50 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
             """)
     long countCompletedByRepositoryIdSince(
             @Param("repoId") Long repoId,
-            @Param("since") Instant since);
+            @Param("since") Instant since
+    );
 
     @Query("""
-            SELECT AVG(p.durationMs)
-            FROM PipelineRun p
-            WHERE p.repository.id = :repoId
-              AND p.startedAt > :since
+            SELECT AVG(r.durationMs)
+            FROM PipelineRun r
+            WHERE r.repository.id = :repoId
+              AND r.startedAt >= :since
             """)
     Double avgDurationSince(
             @Param("repoId") Long repoId,
-            @Param("since") Instant since);
+            @Param("since") Instant since
+    );
 
-    // =====================================================
-    // Flaky Run Detection
-    // =====================================================
+    // =========================================================================
+    // DASHBOARD / ANALYTICS
+    // =========================================================================
+
+    @Query("""
+            SELECT r
+            FROM PipelineRun r
+            JOIN FETCH r.repository
+            WHERE r.status = 'FAILED'
+            ORDER BY r.startedAt DESC
+            """)
+    List<PipelineRun> findRecentFailedRuns(
+            Pageable pageable
+    );
+
+    @Query("""
+            SELECT r
+            FROM PipelineRun r
+            JOIN FETCH r.repository
+            WHERE r.analysisStatus = 'PENDING'
+              AND r.status = 'FAILED'
+            ORDER BY r.startedAt DESC
+            """)
+    List<PipelineRun> findPendingAnalysisRuns(
+            Pageable pageable
+    );
+
+    // =========================================================================
+    // FLAKY RUN DETECTION
+    // =========================================================================
 
     @Query("""
             SELECT DISTINCT r
@@ -100,11 +174,12 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
             """)
     List<PipelineRun> findFlakyRuns(
             @Param("repoId") Long repoId,
-            @Param("since") Instant since);
+            @Param("since") Instant since
+    );
 
-    // =====================================================
-    // Fetch Repository With Run
-    // =====================================================
+    // =========================================================================
+    // FETCH JOINS
+    // =========================================================================
 
     @Query("""
             SELECT pr
@@ -113,5 +188,6 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
             WHERE pr.id = :id
             """)
     Optional<PipelineRun> findByIdWithRepository(
-            @Param("id") Long id);
+            @Param("id") Long id
+    );
 }

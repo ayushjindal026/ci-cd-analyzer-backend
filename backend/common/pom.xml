@@ -13,7 +13,7 @@
 
     <artifactId>common</artifactId>
     <packaging>jar</packaging>
-    <name>common</name>
+    <name>PipelineIQ Common</name>
     <description>Shared entities, repositories, DTOs, enums, exceptions</description>
 
     <dependencies>
@@ -43,6 +43,10 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
         </dependency>
     </dependencies>
 </project>
