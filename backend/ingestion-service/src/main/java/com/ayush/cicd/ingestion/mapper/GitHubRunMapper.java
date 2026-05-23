@@ -1,123 +1,88 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PATH: backend/ingestion-service/src/main/java/com/ayush/cicd/ingestion/mapper/GitHubRunMapper.java
+// ─────────────────────────────────────────────────────────────────────────────
 package com.ayush.cicd.ingestion.mapper;
 
 import com.ayush.cicd.common.entity.MonitoredRepository;
 import com.ayush.cicd.common.entity.PipelineRun;
+import com.ayush.cicd.common.enums.AnalysisStatus;
 import com.ayush.cicd.common.enums.BuildStatus;
 import com.ayush.cicd.ingestion.client.dto.GitHubWorkflowRunDto;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Maps GitHub API DTOs to PipelineRun entities.
- *
- * WHY a dedicated mapper class and not MapStruct here?
- * The status+conclusion → BuildStatus mapping is conditional logic,
- * not a simple field-to-field mapping. MapStruct handles simple
- * transformations elegantly but conditional logic requires
- * 
- * @Mapping with expression= or a custom method — at that point
- *          a plain Java class is more readable and easier to unit test.
- *
- *          This class has zero Spring dependencies — it's pure Java logic.
- *          That makes it trivially unit testable without any Spring context.
+ * Maps GitHubWorkflowRunDto → PipelineRun entity.
+ * Centralised here so mapping logic isn't scattered across services.
  */
 @Component
-@Slf4j
 public class GitHubRunMapper {
 
-    /**
-     * Converts a GitHub workflow run DTO into a PipelineRun entity.
-     *
-     * WHY pass MonitoredRepository as a parameter?
-     * The entity needs the repository reference for the FK.
-     * The mapper shouldn't do DB lookups — that's the service's job.
-     * The service fetches the repo, then passes it here.
-     * Mappers map. Services orchestrate. Single responsibility.
-     *
-     * @param dto        raw data from GitHub API
-     * @param repository the already-loaded MonitoredRepository entity
-     * @return a new PipelineRun ready to be saved (no id yet)
-     */
-    public PipelineRun toPipelineRun(
-            GitHubWorkflowRunDto dto, MonitoredRepository repository) {
-
-        BuildStatus status = mapStatus(dto.getStatus(), dto.getConclusion());
-
-        Long durationMs = calculateDurationMs(dto);
+    public PipelineRun toEntity(GitHubWorkflowRunDto dto, MonitoredRepository repo) {
+        BuildStatus status = BuildStatus.from(dto.getConclusion(), dto.getStatus());
 
         return PipelineRun.builder()
-                .repository(repository)
-                .externalRunId(String.valueOf(dto.getId()))
-                .workflowName(dto.getName())
-                .branch(dto.getHeadBranch())
+                .externalRunId(dto.getExternalId())
+                .repository(repo)
+                .workflowName(dto.getWorkflowName())
+                .branch(dto.getBranch())
                 .headSha(dto.getHeadSha())
                 .status(status)
-                .startedAt(dto.getRunStartedAt())
-                .completedAt("completed".equals(dto.getStatus()) ? dto.getUpdatedAt() : null)
-                .durationMs(durationMs)
+                .triggeredBy(dto.getEvent())
+                .startedAt(dto.getStartedAt())
+                .completedAt(computedCompletedAt(dto))
+                .durationMs(computeDurationMs(dto))
+                .commitMessage(extractCommitMessage(dto))
+                .logsFetched(false)
+                .analysisStatus(AnalysisStatus.PENDING)
                 .build();
     }
 
-    /**
-     * Maps GitHub's two-field status model to our single BuildStatus enum.
-     *
-     * GitHub status field: "queued" | "in_progress" | "completed"
-     * GitHub conclusion field: "success" | "failure" | "cancelled" |
-     * "skipped" | "timed_out" | null
-     *
-     * The conclusion is only meaningful when status = "completed".
-     * When status = "in_progress", conclusion is always null.
-     */
-    private BuildStatus mapStatus(String status, String conclusion) {
-        if (status == null) {
-            return BuildStatus.UNKNOWN;
+    public void updateFromDto(PipelineRun existing, GitHubWorkflowRunDto dto) {
+        BuildStatus newStatus = BuildStatus.from(dto.getConclusion(), dto.getStatus());
+        existing.setStatus(newStatus);
+        existing.setBranch(dto.getBranch());
+        existing.setHeadSha(dto.getHeadSha());
+
+        if (dto.getStartedAt() != null && existing.getStartedAt() == null) {
+            existing.setStartedAt(dto.getStartedAt());
         }
 
-        return switch (status) {
-            case "in_progress", "queued", "waiting" -> BuildStatus.RUNNING;
-            case "completed" -> mapConclusion(conclusion);
-            default -> {
-                log.warn("Unknown GitHub run status: '{}'", status);
-                yield BuildStatus.UNKNOWN;
+        java.time.Instant completed = computedCompletedAt(dto);
+        if (completed != null) {
+            existing.setCompletedAt(completed);
+            if (existing.getStartedAt() != null) {
+                existing.setDurationMs(
+                    completed.toEpochMilli() - existing.getStartedAt().toEpochMilli()
+                );
             }
-        };
+        }
+
+        if (existing.getCommitMessage() == null) {
+            existing.setCommitMessage(extractCommitMessage(dto));
+        }
     }
 
-    private BuildStatus mapConclusion(String conclusion) {
-        if (conclusion == null) {
-            return BuildStatus.UNKNOWN;
-        }
+    // ── Private ───────────────────────────────────────────────────────────────
 
-        return switch (conclusion) {
-            case "success" -> BuildStatus.SUCCESS;
-            case "failure" -> BuildStatus.FAILED;
-            case "cancelled" -> BuildStatus.CANCELLED;
-            // timed_out and action_required are types of failures
-            case "timed_out", "action_required" -> BuildStatus.FAILED;
-            // skipped runs — treat as unknown, not a real failure
-            case "skipped" -> BuildStatus.UNKNOWN;
-            default -> {
-                log.warn("Unknown GitHub run conclusion: '{}'", conclusion);
-                yield BuildStatus.UNKNOWN;
-            }
-        };
+    private java.time.Instant computedCompletedAt(GitHubWorkflowRunDto dto) {
+        // Only set completedAt when the run is actually done
+        BuildStatus s = BuildStatus.from(dto.getConclusion(), dto.getStatus());
+        return s.isTerminal() ? dto.getCompletedAt() : null;
     }
 
-    /**
-     * WHY calculate duration here and not store start/end and compute on query?
-     * Storing pre-computed durationMs means analytics queries are simple:
-     * SELECT AVG(duration_ms) — no date arithmetic in every query.
-     * We still store startedAt and completedAt for time-range filtering.
-     */
-    private Long calculateDurationMs(GitHubWorkflowRunDto dto) {
-        if (dto.getRunStartedAt() == null || dto.getUpdatedAt() == null) {
-            return null;
-        }
-        if (!"completed".equals(dto.getStatus())) {
-            return null; // run still in progress — no duration yet
-        }
-        long duration = dto.getUpdatedAt().toEpochMilli()
-                - dto.getRunStartedAt().toEpochMilli();
-        return duration > 0 ? duration : null;
+    private Long computeDurationMs(GitHubWorkflowRunDto dto) {
+        if (dto.getStartedAt() == null || dto.getCompletedAt() == null) return null;
+        BuildStatus s = BuildStatus.from(dto.getConclusion(), dto.getStatus());
+        if (!s.isTerminal()) return null;
+        return dto.getCompletedAt().toEpochMilli() - dto.getStartedAt().toEpochMilli();
+    }
+
+    private String extractCommitMessage(GitHubWorkflowRunDto dto) {
+        if (dto.getHeadCommit() == null) return null;
+        String msg = dto.getHeadCommit().getMessage();
+        if (msg == null) return null;
+        // Truncate to first line only
+        int nl = msg.indexOf('\n');
+        return nl > 0 ? msg.substring(0, nl) : msg;
     }
 }

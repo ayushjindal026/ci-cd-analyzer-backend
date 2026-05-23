@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.jpa.repository.Modifying;
 
 import java.time.Instant;
 import java.util.List;
@@ -111,7 +112,7 @@ public interface PipelineRunRepository
     long countCompletedByRepositoryIdSince(
             @Param("repoId") Long repoId,
             @Param("since") Instant since
-    );
+    );  
 
     @Query("""
             SELECT AVG(r.durationMs)
@@ -119,7 +120,7 @@ public interface PipelineRunRepository
             WHERE r.repository.id = :repoId
               AND r.startedAt >= :since
             """)
-    Double avgDurationSince(
+    Double avgDurationMsByRepositoryId(
             @Param("repoId") Long repoId,
             @Param("since") Instant since
     );
@@ -189,5 +190,43 @@ public interface PipelineRunRepository
             """)
     Optional<PipelineRun> findByIdWithRepository(
             @Param("id") Long id
+    );
+
+    // =========================================================================
+    // INGESTION / SCHEDULER SUPPORT
+    // =========================================================================
+
+    long countByStatus(
+            BuildStatus status
+    );
+
+    long countByRepository_Id(
+            Long repositoryId
+    );
+
+    List<PipelineRun> findByRepository_IdAndStatusIn(
+            Long repositoryId,
+            List<BuildStatus> statuses
+    );
+
+    Optional<PipelineRun> findByExternalRunId(
+            String externalRunId
+    );
+
+    boolean existsByExternalRunId(
+            String externalRunId
+    );
+
+    @Modifying
+    @Transactional
+    @Query("""
+        UPDATE PipelineRun r
+        SET r.status = 'CANCELLED'
+        WHERE r.status = 'RUNNING'
+          AND r.startedAt < :threshold
+    """)
+    int cancelStaleRunsBefore(
+            @Param("threshold")
+            Instant threshold
     );
 }

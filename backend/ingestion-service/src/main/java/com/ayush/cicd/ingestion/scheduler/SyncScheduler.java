@@ -1,92 +1,139 @@
+// PATH: backend/ingestion-service/src/main/java/com/ayush/cicd/ingestion/scheduler/SyncScheduler.java
 package com.ayush.cicd.ingestion.scheduler;
 
 import com.ayush.cicd.common.entity.MonitoredRepository;
-import com.ayush.cicd.common.repository.MonitoredRepositoryRepository;
+import com.ayush.cicd.common.enums.BuildStatus;
 import com.ayush.cicd.ingestion.service.GitHubIngestionService;
+import com.ayush.cicd.ingestion.service.LogStorageService;
+import com.ayush.cicd.common.repository.MonitoredRepositoryRepository;
+import com.ayush.cicd.common.repository.PipelineRunRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
- * Automatically syncs all active repositories on a fixed schedule.
+ * Scheduled background jobs for keeping pipeline data fresh.
  *
- * WHY @Component not @Service?
- * This class has no business logic — it's a scheduled trigger.
- * It delegates all real work to GitHubIngestionService.
- * @Component is semantically correct for infrastructure classes.
- *
- * WHY fixedDelay and not fixedRate?
- * fixedRate fires every N ms regardless of how long the previous
- * run took. If syncing 50 repos takes 12 minutes and fixedRate
- * is 10 minutes, runs overlap — concurrent syncs on the same repo.
- * fixedDelay waits N ms AFTER the previous execution completes.
- * No overlapping runs. Safer for a small deployment.
- *
- * WHY not use @Scheduled(cron = "...")?
- * Cron is better when you need "run at 2am every night".
- * fixedDelay is better when you need "run every N minutes continuously".
- * Our use case is continuous polling — fixedDelay is correct.
+ * Jobs:
+ *   syncAllRepositories   — every 15 min, fetch latest runs from GitHub
+ *   syncActiveRuns        — every 60s,   update in-progress runs
+ *   cleanupOldLogs        — daily 2am,   delete compressed logs older than 90 days
+ *   cleanupStaleRuns      — daily 3am,   mark abandoned RUNNING runs as CANCELLED
  */
-@Component
 @Slf4j
+@Component
 @RequiredArgsConstructor
 public class SyncScheduler {
 
-    private final MonitoredRepositoryRepository repositoryRepository;
-    private final GitHubIngestionService gitHubIngestionService;
+    private final GitHubIngestionService        ingestionService;
+    private final MonitoredRepositoryRepository repoRepository;
+    private final PipelineRunRepository         runRepository;
+    private final LogStorageService             logStorageService;
+
+    @Value("${sync.enabled:true}")
+    private boolean syncEnabled;
+
+    @Value("${sync.log-retention-days:90}")
+    private int logRetentionDays;
+
+    // ── Full sync — every 15 minutes ──────────────────────────────────────────
 
     /**
-     * Syncs all active repositories every 10 minutes.
-     * The delay value is read from application.properties so it can
-     * be changed per environment without recompiling.
+     * Fetches the latest workflow runs for ALL active repositories.
+     * Runs every 15 minutes — catches missed webhook events.
      *
-     * WHY initialDelay?
-     * Without it, the scheduler fires immediately on startup — before
-     * the application is fully initialised and before the first user
-     * request has even arrived. 60 seconds gives the app time to
-     * warm up connection pools and caches before the first sync hits.
+     * Staggered with initialDelay so it doesn't run on startup
+     * (webhooks should handle real-time; this is a safety net).
      */
-    @Scheduled(
-        fixedDelayString = "${sync.interval.ms:600000}",
-        initialDelayString = "${sync.initial.delay.ms:60000}"
-    )
+    @Scheduled(fixedDelayString = "${sync.interval-ms:900000}",
+               initialDelayString = "${sync.initial-delay-ms:60000}")
     public void syncAllRepositories() {
-        List<MonitoredRepository> activeRepos = repositoryRepository.findByActiveTrue();
+        if (!syncEnabled) return;
 
-        if (activeRepos.isEmpty()) {
-            log.debug("Scheduler: no active repositories to sync");
-            return;
-        }
+        List<MonitoredRepository> repos = repoRepository.findByActiveTrue();
+        if (repos.isEmpty()) return;
 
-        log.info("Scheduler: starting sync for {} active repositories", activeRepos.size());
+        log.info("Starting scheduled sync for {} repositories", repos.size());
+        int synced = 0, errors = 0;
 
-        int totalNewRuns = 0;
-        int successCount = 0;
-        int failCount = 0;
-
-        for (MonitoredRepository repo : activeRepos) {
+        for (MonitoredRepository repo : repos) {
             try {
-                int newRuns = gitHubIngestionService.syncRepository(repo.getId());
-                totalNewRuns += newRuns;
-                successCount++;
-                log.info("Scheduler: synced {}/{} — {} new runs",
-                        repo.getOwner(), repo.getRepoName(), newRuns);
-
+                ingestionService.syncRepository(repo.getId());
+                synced++;
             } catch (Exception e) {
-                // WHY catch and continue instead of letting it propagate?
-                // If one repo fails (bad token, repo deleted, rate limit),
-                // the other repos should still sync. A single failure must
-                // never abort the entire batch.
-                failCount++;
-                log.error("Scheduler: failed to sync {}/{} — {}",
+                errors++;
+                log.error("Sync failed for {}/{}: {}",
                         repo.getOwner(), repo.getRepoName(), e.getMessage());
             }
         }
 
-        log.info("Scheduler: completed — {} repos synced, {} failed, {} total new runs",
-                successCount, failCount, totalNewRuns);
+        log.info("Sync complete: {} succeeded, {} failed", synced, errors);
+    }
+
+    // ── Active run polling — every 60 seconds ─────────────────────────────────
+
+    /**
+     * Polls running pipelines every 60s to update their status.
+     * Only active when there are RUNNING runs — saves API quota.
+     */
+    @Scheduled(fixedDelay = 60_000, initialDelay = 30_000)
+    public void syncActiveRuns() {
+        if (!syncEnabled) return;
+
+        long runningCount = runRepository.countByStatus(BuildStatus.RUNNING);
+        if (runningCount == 0) return;
+
+        log.debug("Polling {} active runs", runningCount);
+
+        List<MonitoredRepository> repos = repoRepository.findByActiveTrue();
+        for (MonitoredRepository repo : repos) {
+            try {
+                ingestionService.syncActiveRuns(repo);
+            } catch (Exception e) {
+                log.debug("Active run poll failed for {}: {}", repo.getFullName(), e.getMessage());
+            }
+        }
+    }
+
+    // ── Log cleanup — daily at 2am ────────────────────────────────────────────
+
+    /**
+     * Deletes compressed logs older than `log-retention-days` (default 90).
+     * Keeps DB storage bounded without manual intervention.
+     */
+    @Scheduled(cron = "0 0 2 * * *")
+    public void cleanupOldLogs() {
+        Instant cutoff = Instant.now().minusSeconds((long) logRetentionDays * 86_400L);
+        try {
+            int deleted = logStorageService.deleteOlderThan(cutoff);
+            log.info("Log cleanup: deleted {} log entries older than {} days",
+                    deleted, logRetentionDays);
+        } catch (Exception e) {
+            log.error("Log cleanup failed: {}", e.getMessage());
+        }
+    }
+
+    // ── Stale run cleanup — daily at 3am ──────────────────────────────────────
+
+    /**
+     * Marks RUNNING runs that haven't updated in 2 hours as CANCELLED.
+     * Handles cases where the webhook was missed and the run was killed.
+     */
+    @Scheduled(cron = "0 0 3 * * *")
+    public void cleanupStaleRuns() {
+        Instant staleThreshold = Instant.now().minusSeconds(2 * 3600L);
+        try {
+            int cancelled = runRepository.cancelStaleRunsBefore(staleThreshold);
+            if (cancelled > 0) {
+                log.info("Stale run cleanup: marked {} runs as CANCELLED", cancelled);
+            }
+        } catch (Exception e) {
+            log.error("Stale run cleanup failed: {}", e.getMessage());
+        }
     }
 }

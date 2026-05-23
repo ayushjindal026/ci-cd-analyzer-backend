@@ -1,71 +1,95 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PATH: backend/ingestion-service/src/main/java/com/ayush/cicd/ingestion/client/dto/GitHubWorkflowRunDto.java
+// ─────────────────────────────────────────────────────────────────────────────
 package com.ayush.cicd.ingestion.client.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Data;
+import lombok.*;
 
 import java.time.Instant;
 
 /**
- * Represents one workflow run from the GitHub Actions API.
- * Maps directly from the JSON response of:
- * GET /repos/{owner}/{repo}/actions/runs
- *
- * WHY @JsonIgnoreProperties(ignoreUnknown = true)?
- * The GitHub API returns 80+ fields per run. We only need ~10.
- * Without this annotation, Jackson throws an error on any field
- * in the JSON that doesn't have a matching Java field.
- * This makes the DTO resilient to GitHub adding new fields.
- *
- * WHY a separate DTO and not deserialize directly into the entity?
- * The API response shape is GitHub's contract — it can change.
- * The entity shape is our DB schema — it should be stable.
- * The mapper between them is where we handle the transformation.
- * Mixing them means a GitHub API change breaks your DB schema.
+ * Mapped from GitHub's workflow run object.
+ * Only fields we actually use — rest ignored.
  */
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class GitHubWorkflowRunDto {
 
+    @JsonProperty("id")
     private Long id;
 
-    private String name;
+    /** We store this as String in PipelineRun.externalRunId */
+    public String getExternalId() { return id != null ? id.toString() : null; }
 
-    /**
-     * "queued", "in_progress", "completed"
-     * Always present — never null.
-     */
-    private String status;
+    @JsonProperty("name")
+    private String workflowName;
 
-    /**
-     * "success", "failure", "cancelled", "skipped", "timed_out", "action_required"
-     * NULL when status is not "completed" yet.
-     */
-    private String conclusion;
+    @JsonProperty("head_branch")
+    private String branch;
 
     @JsonProperty("head_sha")
     private String headSha;
 
-    @JsonProperty("head_branch")
-    private String headBranch;
+    /**
+     * GitHub status: queued | in_progress | completed
+     */
+    @JsonProperty("status")
+    private String status;
+
+    /**
+     * GitHub conclusion (only set when status=completed):
+     * success | failure | cancelled | skipped | timed_out | action_required
+     */
+    @JsonProperty("conclusion")
+    private String conclusion;
 
     @JsonProperty("run_number")
     private Integer runNumber;
 
-    /**
-     * What triggered this run: "push", "pull_request", "workflow_dispatch", "schedule"
-     */
-    private String event;
-
-    @JsonProperty("run_started_at")
-    private Instant runStartedAt;
-
-    @JsonProperty("updated_at")
-    private Instant updatedAt;
+    @JsonProperty("event")
+    private String event;           // push | pull_request | schedule | workflow_dispatch
 
     @JsonProperty("html_url")
     private String htmlUrl;
 
-    @JsonProperty("run_attempt")
-    private Integer runAttempt;
+    @JsonProperty("created_at")
+    private Instant createdAt;
+
+    @JsonProperty("run_started_at")
+    private Instant startedAt;
+
+    @JsonProperty("updated_at")
+    private Instant completedAt;    // GitHub uses updated_at for completion time
+
+    @JsonProperty("workflow_id")
+    private Long workflowId;
+
+    @JsonProperty("actor")
+    private Actor actor;
+
+    @JsonProperty("head_commit")
+    private HeadCommit headCommit;
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Actor {
+        @JsonProperty("login") private String login;
+    }
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class HeadCommit {
+        @JsonProperty("message") private String message;
+        @JsonProperty("author")  private Author author;
+
+        @Data
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public static class Author {
+            @JsonProperty("name") private String name;
+        }
+    }
 }

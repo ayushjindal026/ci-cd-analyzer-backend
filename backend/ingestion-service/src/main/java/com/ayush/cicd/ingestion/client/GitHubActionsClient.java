@@ -1,110 +1,189 @@
 package com.ayush.cicd.ingestion.client;
 
+import com.ayush.cicd.ingestion.client.dto.GitHubWorkflowRunDto;
 import com.ayush.cicd.ingestion.client.dto.GitHubWorkflowRunsResponse;
-import com.ayush.cicd.ingestion.config.GitHubProperties;
-
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.*;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
-import java.time.Instant;
-import java.time.format.DateTimeFormatter;
+import java.util.List;
 
-// ✅ NEW IMPORTS (SSL FIX)
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslContextBuilder;
-import io.netty.handler.ssl.SslProvider;
-import javax.net.ssl.SSLException;
-import reactor.netty.http.client.HttpClient;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
-
-@Component
 @Slf4j
+@Component
+@RequiredArgsConstructor
 public class GitHubActionsClient {
 
-    private final WebClient webClient;
-    private final GitHubProperties properties;
+    private static final String GH_API = "https://api.github.com";
 
-    public GitHubActionsClient(GitHubProperties properties) {
-        this.properties = properties;
+    private final RestTemplate restTemplate;
 
-        // ✅ FIX: Force JDK SSL (Windows fix)
-        SslContext sslContext;
-        try {
-            sslContext = SslContextBuilder
-                    .forClient()
-                    .sslProvider(SslProvider.JDK)
-                    .build();
-        } catch (SSLException e) {
-            throw new RuntimeException("Failed to create SSL context", e);
+    // =========================================================================
+    // FETCH RECENT RUNS
+    // =========================================================================
+
+    public List<GitHubWorkflowRunDto> fetchRecentRuns(
+            String owner,
+            String repo,
+            String token,
+            int perPage
+    ) {
+
+        if (token == null || token.isBlank()) {
+            log.warn("Missing GitHub token for repo {}/{}", owner, repo);
+            return List.of();
         }
 
-        HttpClient httpClient = HttpClient.create()
-                .secure(spec -> spec.sslContext(sslContext));
-
-        this.webClient = WebClient.builder()
-                .baseUrl(properties.getApiBaseUrl())
-                .clientConnector(new ReactorClientHttpConnector(httpClient))
-                .defaultHeader("Authorization", "Bearer " + properties.getToken())
-                .defaultHeader("Accept", "application/vnd.github+json")
-                .defaultHeader("X-GitHub-Api-Version", "2022-11-28")
-                .build();
-    }
-
-    public GitHubWorkflowRunsResponse fetchWorkflowRuns(
-            String owner, String repoName, Instant since) {
-
-        log.debug("Fetching workflow runs for {}/{}, since={}",
-                owner, repoName, since);
+        String url = UriComponentsBuilder
+                .fromHttpUrl(GH_API + "/repos/{owner}/{repo}/actions/runs")
+                .queryParam("per_page", perPage)
+                .queryParam("exclude_pull_requests", false)
+                .buildAndExpand(owner, repo)
+                .toUriString();
 
         try {
-            String uri = buildUri(owner, repoName, since);
 
-            GitHubWorkflowRunsResponse response = webClient.get()
-                    .uri(uri)
-                    .retrieve()
-                    .bodyToMono(GitHubWorkflowRunsResponse.class)
-                    .block();
+            ResponseEntity<GitHubWorkflowRunsResponse> response =
+                    restTemplate.exchange(
+                            url,
+                            HttpMethod.GET,
+                            new HttpEntity<>(headers(token)),
+                            GitHubWorkflowRunsResponse.class
+                    );
 
-            int count = response != null && response.getWorkflowRuns() != null
-                    ? response.getWorkflowRuns().size() : 0;
+            GitHubWorkflowRunsResponse body = response.getBody();
 
-            log.info("Fetched {} workflow runs for {}/{}",
-                    count, owner, repoName);
+            return body != null
+                    ? body.getWorkflowRuns()
+                    : List.of();
 
-            return response;
+        } catch (HttpClientErrorException.NotFound e) {
 
-        } catch (WebClientResponseException.Unauthorized e) {
-            log.error("GitHub API authentication failed for {}/{}", owner, repoName);
-            throw new RuntimeException("GitHub API authentication failed", e);
+            log.warn(
+                    "GitHub repo not found or Actions disabled: {}/{}",
+                    owner,
+                    repo
+            );
 
-        } catch (WebClientResponseException.NotFound e) {
-            log.error("Repository {}/{} not found", owner, repoName);
-            throw new RuntimeException(
-                    String.format("Repository %s/%s not found", owner, repoName), e);
+            return List.of();
 
-        } catch (WebClientResponseException e) {
-            log.error("GitHub API error: {}", e.getMessage());
-            throw new RuntimeException("GitHub API error: " + e.getMessage(), e);
+        } catch (HttpClientErrorException.Forbidden e) {
+
+            log.warn(
+                    "GitHub API access denied for {}/{} — token scope or rate limit issue",
+                    owner,
+                    repo
+            );
+
+            return List.of();
+
+        } catch (Exception e) {
+
+            log.error(
+                    "Unexpected error fetching workflow runs repo={}/{}",
+                    owner,
+                    repo,
+                    e
+            );
+
+            return List.of();
         }
     }
 
-    private String buildUri(String owner, String repoName, Instant since) {
-        StringBuilder uri = new StringBuilder()
-                .append("/repos/")
-                .append(owner)
-                .append("/")
-                .append(repoName)
-                .append("/actions/runs")
-                .append("?per_page=")
-                .append(properties.getRunsPerPage());
+    // =========================================================================
+    // FETCH SINGLE RUN
+    // =========================================================================
 
-        if (since != null) {
-            String sinceFormatted = DateTimeFormatter.ISO_INSTANT.format(since);
-            uri.append("&created=>").append(sinceFormatted);
+    public GitHubWorkflowRunDto fetchSingleRun(
+            String owner,
+            String repo,
+            String runId,
+            String token
+    ) {
+
+        if (token == null || token.isBlank()) {
+            log.warn("Missing GitHub token for run fetch {}", runId);
+            return null;
         }
 
-        return uri.toString();
+        String url =
+                GH_API
+                        + "/repos/"
+                        + owner
+                        + "/"
+                        + repo
+                        + "/actions/runs/"
+                        + runId;
+
+        try {
+
+            ResponseEntity<GitHubWorkflowRunDto> response =
+                    restTemplate.exchange(
+                            url,
+                            HttpMethod.GET,
+                            new HttpEntity<>(headers(token)),
+                            GitHubWorkflowRunDto.class
+                    );
+
+            return response.getBody();
+
+        } catch (HttpClientErrorException.NotFound e) {
+
+            log.debug(
+                    "Workflow run {} not found for repo {}/{}",
+                    runId,
+                    owner,
+                    repo
+            );
+
+            return null;
+
+        } catch (HttpClientErrorException.Forbidden e) {
+
+            log.warn(
+                    "Access denied fetching workflow run {} for repo {}/{}",
+                    runId,
+                    owner,
+                    repo
+            );
+
+            return null;
+
+        } catch (Exception e) {
+
+            log.error(
+                    "Unexpected error fetching workflow run {}",
+                    runId,
+                    e
+            );
+
+            return null;
+        }
+    }
+
+    // =========================================================================
+    // HEADERS
+    // =========================================================================
+
+    private HttpHeaders headers(String token) {
+
+        HttpHeaders headers = new HttpHeaders();
+
+        headers.setBearerAuth(token);
+
+        headers.set(
+                "Accept",
+                "application/vnd.github+json"
+        );
+
+        headers.set(
+                "X-GitHub-Api-Version",
+                "2022-11-28"
+        );
+
+        return headers;
     }
 }

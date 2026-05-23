@@ -1,6 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════════════════
-// PATH: backend/common/src/main/java/com/ayush/cicd/common/entity/PipelineLog.java
-// ═══════════════════════════════════════════════════════════════════════════════
 package com.ayush.cicd.common.entity;
 
 import jakarta.persistence.*;
@@ -9,38 +6,32 @@ import lombok.*;
 import java.time.Instant;
 
 /**
- * Persisted + compressed log for a single pipeline run stage.
+ * Stores compressed CI/CD pipeline logs.
  *
- * WHY persist logs?
- * - Re-analysis without re-fetching from GitHub (logs expire after 90 days on
- * GitHub)
- * - Full-text search across historical failures
- * - Diff logs between runs to spot regressions
- *
- * WHY GZIP compress?
- * - Raw CI logs are typically 50–500 KB of repetitive text
- * - GZIP achieves 85–95% compression on log text
- * - Keeps DB storage cost low at scale
- *
- * Storage estimate: 10K runs × 5 stages × avg 20 KB compressed = ~1 GB / 10K
- * runs
+ * Features:
+ * - Per-stage log storage
+ * - Compression support
+ * - Fast searchable error previews
+ * - Repository-level analytics
+ * - Cleanup support
  */
 @Entity
-@Table(
-name = "pipeline_logs",
+@Table(name = "pipeline_logs",
 
-uniqueConstraints = {
-    @UniqueConstraint(
-        name = "uk_pipeline_log_run_stage",
-        columnNames = {
-            "run_id",
-            "stage"
-        }
-    )
-}, indexes = {
-    @Index(name = "idx_pl_run_id", columnList = "run_id"),
-    @Index(name = "idx_pl_repo_stage", columnList = "repository_id, stage"),
-})
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_pipeline_log_run_stage", columnNames = {
+                        "run_id",
+                        "stage"
+                })
+        },
+
+        indexes = {
+                @Index(name = "idx_pl_run_id", columnList = "run_id"),
+
+                @Index(name = "idx_pl_repo_stage", columnList = "repository_id, stage"),
+
+                @Index(name = "idx_pl_stored_at", columnList = "stored_at")
+        })
 @Getter
 @Setter
 @Builder
@@ -48,43 +39,105 @@ uniqueConstraints = {
 @AllArgsConstructor
 public class PipelineLog {
 
+    // =========================================================================
+    // PRIMARY KEY
+    // =========================================================================
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // =========================================================================
+    // RELATIONS
+    // =========================================================================
+
+    /**
+     * Pipeline run ID.
+     */
     @Column(name = "run_id", nullable = false)
     private Long runId;
 
+    /**
+     * Repository ID.
+     */
     @Column(name = "repository_id", nullable = false)
     private Long repositoryId;
 
-    /** Stage name: Checkout | Build | Test | Docker | Deploy */
+    // =========================================================================
+    // PIPELINE METADATA
+    // =========================================================================
+
+    /**
+     * Pipeline stage:
+     * Checkout | Build | Test | Docker | Deploy
+     */
     @Column(nullable = false, length = 100)
     private String stage;
 
+    // =========================================================================
+    // LOG STORAGE
+    // =========================================================================
+
     /**
-     * GZIP-compressed raw log text.
-     * Use LogStorageService.compress() / decompress() to read/write.
+     * GZIP compressed log bytes.
      */
-    @Column(name = "compressed_log", columnDefinition = "BYTEA", nullable = false)
+    @Lob
+    @Column(name = "compressed_log", nullable = false, columnDefinition = "BYTEA")
     private byte[] compressedLog;
 
     /**
-     * Original uncompressed size in bytes — useful for stats and decompression
-     * buffer.
+     * Original uncompressed log size.
      */
     @Column(name = "raw_size_bytes")
-    private int rawSizeBytes;
-
-    /** Compressed size in bytes. */
-    @Column(name = "compressed_size_bytes")
-    private int compressedSizeBytes;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
-    private Instant createdAt = Instant.now();
+    private int rawSizeBytes = 0;
 
-    /** First 500 chars of error lines — queryable without decompression. */
-    @Column(name = "error_preview", length = 500)
+    /**
+     * Compressed size.
+     */
+    @Column(name = "compressed_size_bytes")
+    @Builder.Default
+    private int compressedSizeBytes = 0;
+
+    // =========================================================================
+    // SEARCHABLE ERROR PREVIEW
+    // =========================================================================
+
+    /**
+     * Extracted error summary for fast searching
+     * without decompression.
+     */
+    @Column(name = "error_preview", length = 1000)
     private String errorPreview;
+
+    // =========================================================================
+    // TIMESTAMPS
+    // =========================================================================
+
+    /**
+     * Log creation timestamp.
+     */
+    @Column(name = "stored_at", nullable = false, updatable = false)
+    @Builder.Default
+    private Instant storedAt = Instant.now();
+
+    // =========================================================================
+    // HELPERS
+    // =========================================================================
+
+    @Transient
+    public boolean hasErrors() {
+        return errorPreview != null
+                && !errorPreview.isBlank();
+    }
+
+    @Transient
+    public double compressionRatio() {
+
+        if (rawSizeBytes <= 0) {
+            return 0;
+        }
+
+        return ((double) compressedSizeBytes / rawSizeBytes);
+    }
 }

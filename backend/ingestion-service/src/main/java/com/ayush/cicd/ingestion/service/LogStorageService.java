@@ -5,6 +5,8 @@ import com.ayush.cicd.common.repository.PipelineLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import java.time.Instant;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -85,6 +87,16 @@ public class LogStorageService {
         return logRepository.findByRunIdAndStage(runId, stage).isPresent();
     }
 
+    // ── Cleanup ──────────────────────────────────────────────────────────────
+
+    /**
+     * Deletes stored logs older than the given timestamp.
+     */
+    @Transactional
+    public int deleteOlderThan(Instant before) {
+        return logRepository.deleteOlderThan(before);
+    }
+
     // ── Compression ───────────────────────────────────────────────────────────
 
     public static byte[] compress(String text) throws IOException {
@@ -111,15 +123,18 @@ public class LogStorageService {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private String extractErrorPreview(String rawLog) {
-        return rawLog.lines()
-                .filter(l -> l.toLowerCase().contains("error")
-                          || l.toLowerCase().contains("exception")
-                          || l.toLowerCase().contains("failed"))
+
+        String preview = rawLog.lines()
+                .filter(l ->
+                        l.toLowerCase().contains("error")
+                     || l.toLowerCase().contains("exception")
+                     || l.toLowerCase().contains("failed"))
                 .limit(3)
-                .reduce("", (a, b) -> a.isBlank() ? b : a + " | " + b)
-                .substring(0, Math.min(500,
-                        rawLog.lines()
-                              .filter(l -> l.toLowerCase().contains("error"))
-                              .findFirst().orElse("").length()));
+                .reduce((a, b) -> a + " | " + b)
+                .orElse("");
+
+        return preview.length() > 500
+                ? preview.substring(0, 500)
+                : preview;
     }
 }

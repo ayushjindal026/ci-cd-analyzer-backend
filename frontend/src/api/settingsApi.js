@@ -5,19 +5,18 @@
 import api from './client'
 
 export const settingsApi = {
-    // User notification preferences
-    getPrefs: () => api.get('/settings/preferences'),
-    savePrefs: data => api.put('/settings/preferences', data),
 
-    // Alert thresholds
-    getAlerts: () => api.get('/settings/alerts'),
-    saveAlerts: data => api.put('/settings/alerts', data),
+    // ── Notification preferences ───────────────────────────────────────────────
+    getPrefs:   ()     => api.get('/settings/preferences'),
+    savePrefs:  data   => api.put('/settings/preferences', data),
 
-    // Slack integration
-    testSlack: url => api.post('/settings/slack/test', { webhookUrl: url }),
+    // ── Alert thresholds ───────────────────────────────────────────────────────
+    getAlerts:  ()     => api.get('/settings/alerts'),
+    saveAlerts: data   => api.put('/settings/alerts', data),
 
-    // Email integration
-    testEmail: email => api.post('/settings/email/test', { email }),
+    // ── Integration tests ──────────────────────────────────────────────────────
+    testSlack:  url    => api.post('/settings/slack/test',  { webhookUrl: url }),
+    testEmail:  email  => api.post('/settings/email/test',  { email }),
 
     // Connected integrations list
     getIntegrations: () => api.get('/settings/integrations'),

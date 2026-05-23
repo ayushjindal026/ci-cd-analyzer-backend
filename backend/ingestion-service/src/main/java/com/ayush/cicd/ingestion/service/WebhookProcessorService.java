@@ -255,7 +255,7 @@ public class WebhookProcessorService {
                 String ref = (String) payload.get("ref");
 
                 log.debug(
-                                "Push event on {} ({})",
+                                "Push event: repo={} ref={}",
                                 fullName,
                                 ref);
         }
@@ -268,9 +268,13 @@ public class WebhookProcessorService {
                         String signature,
                         Map<String, Object> payload) {
 
-                if (signature == null
-                                || !signature.startsWith("sha256=")) {
+                if (webhookSecret == null || webhookSecret.isBlank()) {
+                        log.warn("No webhook secret configured — skipping signature verification (unsafe in production)");
+                        return true;
+                }
 
+                if (signature == null || !signature.startsWith("sha256=")) {
+                        log.warn("Missing or malformed X-Hub-Signature-256 header");               
                         return false;
                 }
 

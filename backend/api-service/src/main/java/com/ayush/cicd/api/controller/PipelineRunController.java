@@ -35,98 +35,98 @@ import org.springframework.web.bind.annotation.*;
 @Tag(name = "Pipeline Runs", description = "Pipeline run management APIs")
 public class PipelineRunController {
 
-    private final GitHubIngestionService gitHubIngestionService;
+        private final GitHubIngestionService gitHubIngestionService;
 
-    private final PipelineRunService pipelineRunService;
+        private final PipelineRunService pipelineRunService;
 
-    private final AuthorizationService authorizationService;
+        private final AuthorizationService authorizationService;
 
-    // ------------------------------------------------------------------------
-    // Manual Repository Sync
-    // ------------------------------------------------------------------------
+        // ------------------------------------------------------------------------
+        // Manual Repository Sync
+        // ------------------------------------------------------------------------
 
-    @PostMapping("/sync")
-    @Operation(summary = "Trigger manual repository sync")
-    public ResponseEntity<ApiResponse<String>> syncRepository(
-            @PathVariable Long repoId,
-            @AuthenticationPrincipal User currentUser) {
+        @PostMapping("/sync")
+        @Operation(summary = "Trigger manual repository sync")
+        public ResponseEntity<ApiResponse<String>> syncRepository(
+                        @PathVariable Long repoId,
+                        @AuthenticationPrincipal User currentUser) {
 
-        // --------------------------------------------------------------------
-        // Ownership validation
-        // --------------------------------------------------------------------
+                // --------------------------------------------------------------------
+                // Ownership validation
+                // --------------------------------------------------------------------
 
-        authorizationService.requireActiveRepoAccess(
-                repoId,
-                currentUser);
+                authorizationService.requireActiveRepoAccess(
+                                repoId,
+                                currentUser);
 
-        log.info(
-                "Manual sync triggered for repositoryId={} by userId={}",
-                repoId,
-                currentUser.getId());
+                log.info(
+                                "Manual sync triggered for repositoryId={} by userId={}",
+                                repoId,
+                                currentUser.getId());
 
-        int newRuns = gitHubIngestionService.syncRepository(repoId);
+                int newRuns = gitHubIngestionService.syncRepository(repoId);
 
-        return ResponseEntity.ok(
-                ApiResponse.success(
-                        newRuns + " new runs ingested",
-                        "Repository sync completed successfully"));
-    }
+                return ResponseEntity.ok(
+                                ApiResponse.success(
+                                                newRuns + " new runs ingested",
+                                                "Repository sync completed successfully"));
+        }
 
-    // ------------------------------------------------------------------------
-    // List Pipeline Runs
-    // ------------------------------------------------------------------------
+        // ------------------------------------------------------------------------
+        // List Pipeline Runs
+        // ------------------------------------------------------------------------
 
-    @GetMapping("/runs")
-    @Operation(summary = "Get repository pipeline runs")
-    public ResponseEntity<ApiResponse<PagedResponse<PipelineRunResponse>>> getRepositoryRuns(
+        @GetMapping("/runs")
+        @Operation(summary = "Get repository pipeline runs")
+        public ResponseEntity<ApiResponse<PagedResponse<PipelineRunResponse>>> getRepositoryRuns(
 
-            @PathVariable Long repoId,
+                        @PathVariable Long repoId,
 
-            @RequestParam(defaultValue = "0") @Min(value = 0, message = "Page must be >= 0") int page,
+                        @RequestParam(defaultValue = "0") @Min(value = 0, message = "Page must be >= 0") int page,
 
-            @RequestParam(defaultValue = "20") @Min(value = 1, message = "Size must be >= 1") @Max(value = 100, message = "Size cannot exceed 100") int size,
+                        @RequestParam(defaultValue = "20") @Min(value = 1, message = "Size must be >= 1") @Max(value = 100, message = "Size cannot exceed 100") int size,
 
-            @AuthenticationPrincipal User currentUser) {
+                        @AuthenticationPrincipal User currentUser) {
 
-        authorizationService.requireActiveRepoAccess(
-                repoId,
-                currentUser);
+                authorizationService.requireActiveRepoAccess(
+                                repoId,
+                                currentUser);
 
-        PagedResponse<PipelineRunResponse> runs = pipelineRunService.getRunsForRepository(
-                repoId,
-                page,
-                size);
+                PagedResponse<PipelineRunResponse> runs = pipelineRunService.getRunsForRepository(
+                                repoId,
+                                page,
+                                size);
 
-        return ResponseEntity.ok(
-                ApiResponse.success(runs));
-    }
+                return ResponseEntity.ok(
+                                ApiResponse.success(runs));
+        }
 
-    // ------------------------------------------------------------------------
-    // Get Single Pipeline Run
-    // ------------------------------------------------------------------------
+        // ------------------------------------------------------------------------
+        // Get Single Pipeline Run
+        // ------------------------------------------------------------------------
 
-    @GetMapping("/runs/{runId}")
-    @Operation(summary = "Get pipeline run by id")
-    public ResponseEntity<ApiResponse<PipelineRunResponse>> getPipelineRun(
+        @GetMapping("/runs/{runId}")
+        @Operation(summary = "Get pipeline run by id")
+        public ResponseEntity<ApiResponse<PipelineRunResponse>> getPipelineRun(
 
-            @PathVariable Long repoId,
+                        @PathVariable Long repoId,
 
-            @PathVariable Long runId,
+                        @PathVariable Long runId,
 
-            @AuthenticationPrincipal User currentUser) {
+                        @AuthenticationPrincipal User currentUser) {
 
-        // --------------------------------------------------------------------
-        // Ownership + repo/run relation validation
-        // --------------------------------------------------------------------
+                // --------------------------------------------------------------------
+                // Ownership + repo/run relation validation
+                // --------------------------------------------------------------------
 
-        authorizationService.requireRunAccess(
-                repoId,
-                runId,
-                currentUser);
+                authorizationService.requireRunAccess(
+                                repoId,
+                                runId,
+                                currentUser);
 
-        PipelineRunResponse pipelineRun = pipelineRunService.getRunById(runId);
+                PipelineRunResponse pipelineRun = pipelineRunService.getRunById(runId);
 
-        return ResponseEntity.ok(
-                ApiResponse.success(pipelineRun));
-    }
+                return ResponseEntity.ok(
+                                ApiResponse.success(pipelineRun));
+        }
 }

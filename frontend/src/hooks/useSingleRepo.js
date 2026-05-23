@@ -1,22 +1,25 @@
-// ═══════════════════════════════════════════════════════════════════════════════
-// src/hooks/useSingleRepo.js  — useful in detail views
-// ═══════════════════════════════════════════════════════════════════════════════
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { repoApi } from '@/api/client'
 
-export function useSingleRepo(repositoryId) {
+/**
+ * Fetches a single repository by ID.
+ * Used in RepositoryDetails page.
+ */
+export function useSingleRepo(repoId) {
     const [repo, setRepo] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
 
-    useEffect(() => {
-        if (!repositoryId) return
-        setLoading(true)
-        repoApi.get(repositoryId)
+    const fetch = useCallback(() => {
+        if (!repoId) { setLoading(false); return }
+        setLoading(true); setError(null)
+        repoApi.get(repoId)
             .then(r => setRepo(r.data))
             .catch(e => setError(e.response?.data?.message ?? 'Failed to load repository'))
             .finally(() => setLoading(false))
-    }, [repositoryId])
+    }, [repoId])
 
-    return { repo, loading, error }
+    useEffect(() => { fetch() }, [fetch])
+
+    return { repo, loading, error, refetch: fetch }
 }

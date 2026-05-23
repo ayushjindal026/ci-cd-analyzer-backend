@@ -62,7 +62,7 @@ jobs:
           SPRING_DATASOURCE_USERNAME: postgres
           SPRING_DATASOURCE_PASSWORD: postgres
 
-          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_HOST: redis
           SPRING_DATA_REDIS_PORT: 6379
 
           JWT_SECRET: test-super-secret-key-for-ci-minimum-32-chars

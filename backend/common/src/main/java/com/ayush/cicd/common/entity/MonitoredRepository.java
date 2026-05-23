@@ -29,7 +29,7 @@ import java.util.List;
         @Index(name = "idx_repo_name", columnList = "repo_name"),
         @Index(name = "idx_repo_active", columnList = "is_active")
 })
-// @Data
+
 @Getter
 @Setter
 @Builder
