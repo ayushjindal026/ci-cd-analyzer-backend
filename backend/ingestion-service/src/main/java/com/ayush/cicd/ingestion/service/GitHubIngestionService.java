@@ -18,16 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 
-/**
- * Pulls the latest workflow runs from GitHub API and persists them.
- * Called both by SyncScheduler (periodic) and RepositoryService (manual sync).
- *
- * Flow:
- * 1. Fetch last N runs from GitHub Actions API
- * 2. For each run: upsert PipelineRun (create or update status)
- * 3. For new FAILED runs: trigger async AI analysis
- * 4. Update MonitoredRepository.lastSyncedAt
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -42,18 +32,35 @@ public class GitHubIngestionService {
 
     private static final int RUNS_PER_SYNC = 25;
 
-    // ── Full repo sync ────────────────────────────────────────────────────────
+    // ── Overload: called by PipelineRunController with just repoId ────────────
 
-    public int syncRepository(Long repositoryId) {
-        MonitoredRepository repo = repoRepository.findById(repositoryId)
-                .orElseThrow(() -> new IllegalArgumentException("Repo not found: " + repositoryId));
+    /**
+     * Called by PipelineRunController.syncRepository(repoId).
+     * Looks up the MonitoredRepository then delegates to the full sync.
+     * Returns count of new runs ingested.
+     */
+    public int syncRepository(Long repoId) {
+        MonitoredRepository repo = repoRepository.findById(repoId)
+                .orElseThrow(() -> new IllegalArgumentException("Repository not found: " + repoId));
+        return syncRepository(repo);
+    }
 
+    // ── Main sync: called by RepositoryService + SyncScheduler ───────────────
+
+    /**
+     * Fetches the latest N workflow runs from GitHub and upserts them.
+     * Returns count of newly-created runs.
+     */
+    private int syncRepository(MonitoredRepository repo) {
         log.debug("Syncing {}/{}", repo.getOwner(), repo.getRepoName());
+
+        // Use the repo owner's GitHub token — not the global token
+        String token = resolveToken(repo);
 
         List<GitHubWorkflowRunDto> ghRuns = githubClient.fetchRecentRuns(
                 repo.getOwner(),
                 repo.getRepoName(),
-                repo.getUser().getGithubToken(),
+                token,
                 RUNS_PER_SYNC);
 
         if (ghRuns == null || ghRuns.isEmpty()) {
@@ -65,77 +72,78 @@ public class GitHubIngestionService {
         int created = 0, updated = 0;
 
         for (GitHubWorkflowRunDto dto : ghRuns) {
-            boolean isNew = runRepository.findByRepository_IdAndExternalRunId(
-                    repo.getId(),
-                    dto.getExternalId())
-                    .isEmpty();
-
+            boolean isNew = !runRepository.existsByExternalRunId(dto.getExternalId());
             PipelineRun run = upsertRun(repo, dto);
 
-            if (isNew)
+            if (isNew) {
                 created++;
-            else
+                // Trigger AI analysis for newly-discovered FAILED runs
+                if (run.getStatus() == BuildStatus.FAILED
+                        && run.getAnalysisStatus() == AnalysisStatus.PENDING) {
+                    log.info("Queueing AI analysis for failed run {} on {}/{}",
+                            run.getExternalRunId(), repo.getOwner(), repo.getRepoName());
+                    run.setAnalysisStatus(AnalysisStatus.IN_PROGRESS);
+                    runRepository.save(run);
+                    logFetcher.fetchAndAnalyse(repo.getId(), run.getId());
+                }
+            } else {
                 updated++;
-
-            // Trigger AI analysis for newly-discovered failed runs
-            if (isNew && run.getStatus() == BuildStatus.FAILED) {
-                log.info("New failed run discovered: {} — queuing analysis", run.getExternalRunId());
-                run.setAnalysisStatus(AnalysisStatus.IN_PROGRESS);
-                runRepository.save(run);
-                logFetcher.fetchAndAnalyse(repo.getId(), run.getId());
             }
         }
 
-        // Update repo summary fields
+        // Update repo summary fields from the latest run
         ghRuns.stream().findFirst().ifPresent(latest -> {
-            repo.setLastRunStatus(
-                    BuildStatus.from(latest.getConclusion(), latest.getStatus()).name().toLowerCase());
+            BuildStatus latest_status = BuildStatus.from(
+                    latest.getConclusion(), latest.getStatus());
+            repo.setLastRunStatus(latest_status.name().toLowerCase());
             repo.setLastRunAt(Instant.now());
-            repo.setTotalRuns(
-                    (int) runRepository.countByRepository_Id(repo.getId()));
+            repo.setTotalRuns((int) runRepository.countByRepository_Id(repo.getId()));
         });
 
         updateLastSynced(repo);
-        log.info("Sync {}/{}: {} created, {} updated", repo.getOwner(), repo.getRepoName(), created, updated);
+
+        log.info("Sync complete for {}/{}: {} created, {} updated",
+                repo.getOwner(), repo.getRepoName(), created, updated);
+
         return created;
     }
 
-    // ── Active run polling ────────────────────────────────────────────────────
+    // ── Active run polling (called by SyncScheduler every 60s) ───────────────
 
     public void syncActiveRuns(MonitoredRepository repo) {
-        List<PipelineRun> activeRuns = runRepository
-                .findByRepository_IdAndStatusIn(
-                        repo.getId(),
-                        List.of(BuildStatus.RUNNING, BuildStatus.PENDING));
+        List<PipelineRun> activeRuns = runRepository.findByRepository_IdAndStatusIn(
+                repo.getId(), List.of(BuildStatus.RUNNING, BuildStatus.PENDING));
 
         if (activeRuns.isEmpty())
             return;
 
+        String token = resolveToken(repo);
+
         for (PipelineRun run : activeRuns) {
             try {
                 GitHubWorkflowRunDto dto = githubClient.fetchSingleRun(
-                        repo.getOwner(),
-                        repo.getRepoName(),
-                        run.getExternalRunId(),
-                        repo.getUser().getGithubToken());
+                        repo.getOwner(), repo.getRepoName(),
+                        run.getExternalRunId(), token);
+
                 if (dto == null)
                     continue;
 
                 BuildStatus newStatus = BuildStatus.from(dto.getConclusion(), dto.getStatus());
                 if (newStatus == run.getStatus())
-                    continue; // no change
+                    continue;
 
                 run.setStatus(newStatus);
-                if (dto.getCompletedAt() != null) {
+                if (dto.getCompletedAt() != null && newStatus.isTerminal()) {
                     run.setCompletedAt(dto.getCompletedAt());
                     if (run.getStartedAt() != null) {
                         run.setDurationMs(
-                                run.getCompletedAt().toEpochMilli() - run.getStartedAt().toEpochMilli());
+                                run.getCompletedAt().toEpochMilli()
+                                        - run.getStartedAt().toEpochMilli());
                     }
                 }
                 runRepository.save(run);
 
-                // Trigger analysis if just transitioned to FAILED
+                // Trigger analysis if just became FAILED
                 if (newStatus == BuildStatus.FAILED
                         && run.getAnalysisStatus() == AnalysisStatus.PENDING) {
                     run.setAnalysisStatus(AnalysisStatus.IN_PROGRESS);
@@ -144,10 +152,8 @@ public class GitHubIngestionService {
                 }
 
             } catch (Exception e) {
-                log.debug(
-                        "Failed to poll run {}: {}",
-                        run.getExternalRunId(),
-                        e);
+                log.debug("Active run poll failed for run {}: {}",
+                        run.getExternalRunId(), e.getMessage());
             }
         }
     }
@@ -155,10 +161,7 @@ public class GitHubIngestionService {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private PipelineRun upsertRun(MonitoredRepository repo, GitHubWorkflowRunDto dto) {
-
-        return runRepository.findByRepository_IdAndExternalRunId(
-                repo.getId(),
-                dto.getExternalId())
+        return runRepository.findByExternalRunId(dto.getExternalId())
                 .map(existing -> {
                     runMapper.updateFromDto(existing, dto);
                     return runRepository.save(existing);
@@ -172,5 +175,22 @@ public class GitHubIngestionService {
     private void updateLastSynced(MonitoredRepository repo) {
         repo.setLastSyncedAt(Instant.now());
         repoRepository.save(repo);
+    }
+
+    /**
+     * Resolves the GitHub token to use for API calls.
+     * Prefers the repo owner's personal token (stored from OAuth).
+     * Falls back to server-level token (PAT in application.properties).
+     */
+    private String resolveToken(MonitoredRepository repo) {
+        if (repo.getUser() != null
+                && repo.getUser().getGithubToken() != null
+                && !repo.getUser().getGithubToken().isBlank()) {
+            return repo.getUser().getGithubToken();
+        }
+        // Fallback: server PAT (used for public repos)
+        log.warn("No user token for {}/{} — falling back to server token",
+                repo.getOwner(), repo.getRepoName());
+        return "";
     }
 }

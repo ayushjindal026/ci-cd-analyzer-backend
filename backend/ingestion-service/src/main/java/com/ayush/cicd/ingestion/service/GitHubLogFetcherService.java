@@ -236,10 +236,12 @@ public class GitHubLogFetcherService {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private String resolveToken(MonitoredRepository repo) {
-        // Prefer per-repo token (from user's OAuth), fall back to server default
-        return (repo.getAccessToken() != null && !repo.getAccessToken().isBlank())
-                ? repo.getAccessToken()
-                : defaultToken;
+
+        if (repo.getUser() != null && repo.getUser().getGithubToken() != null
+                && !repo.getUser().getGithubToken().isBlank()) {
+            return repo.getUser().getGithubToken();
+        }
+        return defaultToken;
     }
 
     private HttpHeaders buildHeaders(String token) {

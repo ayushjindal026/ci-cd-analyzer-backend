@@ -3,8 +3,10 @@ package com.ayush.cicd.ingestion.service;
 import com.ayush.cicd.common.entity.FailureRecord;
 import com.ayush.cicd.common.entity.MonitoredRepository;
 import com.ayush.cicd.common.entity.PipelineRun;
+import com.ayush.cicd.common.entity.RunAnalysis;
 import com.ayush.cicd.common.enums.AnalysisStatus;
 import com.ayush.cicd.common.repository.PipelineRunRepository;
+import com.ayush.cicd.common.repository.RunAnalysisRepository;
 import com.ayush.cicd.ingestion.service.FailureClassifierService.FailureStats;
 import com.ayush.cicd.ingestion.service.LogParserService.ParsedLog;
 import lombok.RequiredArgsConstructor;
@@ -20,19 +22,23 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PipelineAnalysisOrchestrator {
 
+        // ─────────────────────────────────────────────────────────────────────
+        // DEPENDENCIES
+        // ─────────────────────────────────────────────────────────────────────
+
         private final LogParserService logParser;
 
         private final FailureClassifierService classifier;
 
-        // IMPORTANT:
-        // AiAnalysisService should ideally be a client later
         private final AiAnalysisService aiService;
 
         private final PipelineRunRepository runRepo;
 
-        // =====================================================
-        // Main Orchestration
-        // =====================================================
+        private final RunAnalysisRepository analysisRepository;
+
+        // ─────────────────────────────────────────────────────────────────────
+        // MAIN ORCHESTRATION
+        // ─────────────────────────────────────────────────────────────────────
 
         @Async("aiTaskExecutor")
         @Transactional
@@ -42,7 +48,7 @@ public class PipelineAnalysisOrchestrator {
                         Map<String, String> stageLogs) {
 
                 log.info(
-                                "Intelligence pipeline started — run={} repo={}",
+                                "Pipeline intelligence started — run={} repo={}",
                                 run.getId(),
                                 repo.getFullName());
 
@@ -54,9 +60,9 @@ public class PipelineAnalysisOrchestrator {
 
                         String primaryLog = null;
 
-                        // =================================================
-                        // Parse each stage
-                        // =================================================
+                        // ─────────────────────────────────────────────────────────
+                        // PARSE + CLASSIFY EACH STAGE
+                        // ─────────────────────────────────────────────────────────
 
                         for (Map.Entry<String, String> entry : stageLogs.entrySet()) {
 
@@ -64,21 +70,30 @@ public class PipelineAnalysisOrchestrator {
 
                                 String rawLog = entry.getValue();
 
+                                if (rawLog == null || rawLog.isBlank()) {
+                                        continue;
+                                }
+
                                 ParsedLog parsed = logParser.parse(rawLog, stage);
 
                                 if (!parsed.hasFailure()) {
+
+                                        log.debug(
+                                                        "No failure detected in stage={}",
+                                                        stage);
+
                                         continue;
                                 }
 
                                 FailureRecord record = classifier.classify(run, parsed);
 
-                                log.debug(
-                                                "Classified stage={} category={} severity={}",
+                                log.info(
+                                                "Stage classified — stage={} category={} severity={}",
                                                 stage,
                                                 record.getCategory(),
                                                 record.getSeverity());
 
-                                // Select most severe failure
+                                // Select highest severity failure
                                 if (primaryRecord == null
                                                 || severityRank(record) > severityRank(primaryRecord)) {
 
@@ -90,14 +105,14 @@ public class PipelineAnalysisOrchestrator {
                                 }
                         }
 
-                        // =================================================
-                        // No failures found
-                        // =================================================
+                        // ─────────────────────────────────────────────────────────
+                        // NO FAILURES FOUND
+                        // ─────────────────────────────────────────────────────────
 
                         if (primaryRecord == null) {
 
                                 log.warn(
-                                                "No failure detected in logs for run {}",
+                                                "No actionable failures detected for run={}",
                                                 run.getId());
 
                                 updateAnalysisStatus(
@@ -107,50 +122,62 @@ public class PipelineAnalysisOrchestrator {
                                 return;
                         }
 
-                        // =================================================
-                        // Historical statistics
-                        // =================================================
+                        // ─────────────────────────────────────────────────────────
+                        // HISTORICAL CONTEXT
+                        // ─────────────────────────────────────────────────────────
 
                         FailureStats stats = classifier.getStats(
                                         run.getRepository().getId(),
                                         30);
 
                         log.info(
-                                        "Calling AI — run={} stage={} category={}",
+                                        "Invoking AI analysis — run={} stage={} category={}",
                                         run.getId(),
                                         primaryStage,
                                         primaryRecord.getCategory());
 
-                        // =================================================
-                        // AI Analysis
-                        // =================================================
+                        // ─────────────────────────────────────────────────────────
+                        // AI ANALYSIS
+                        // ─────────────────────────────────────────────────────────
 
-                        aiService.analyse(
+                        RunAnalysis analysis = aiService.analyse(
                                         run.getRepository().getId(),
                                         run.getId(),
                                         primaryStage,
                                         primaryLog,
                                         stats);
 
-                        // =================================================
-                        // Success
-                        // =================================================
+                        // ─────────────────────────────────────────────────────────
+                        // PERSIST FINAL ANALYSIS
+                        // ─────────────────────────────────────────────────────────
+
+                        RunAnalysis saved = analysisRepository.save(analysis);
+
+                        log.info(
+                                        "AI analysis persisted — analysisId={} run={}",
+                                        saved.getId(),
+                                        run.getId());
+
+
+                        // ─────────────────────────────────────────────────────────
+                        // SUCCESS
+                        // ─────────────────────────────────────────────────────────
 
                         updateAnalysisStatus(
                                         run,
                                         AnalysisStatus.DONE);
 
                         log.info(
-                                        "Intelligence pipeline complete — run={}",
+                                        "Pipeline intelligence completed successfully — run={}",
                                         run.getId());
 
-                } catch (Exception e) {
+                } catch (Exception ex) {
 
                         log.error(
-                                        "Orchestration error for run {}: {}",
+                                        "Pipeline orchestration failed — run={} error={}",
                                         run.getId(),
-                                        e.getMessage(),
-                                        e);
+                                        ex.getMessage(),
+                                        ex);
 
                         updateAnalysisStatus(
                                         run,
@@ -158,9 +185,9 @@ public class PipelineAnalysisOrchestrator {
                 }
         }
 
-        // =====================================================
-        // Update Analysis Status
-        // =====================================================
+        // ─────────────────────────────────────────────────────────────────────
+        // STATUS MANAGEMENT
+        // ─────────────────────────────────────────────────────────────────────
 
         private void updateAnalysisStatus(
                         PipelineRun run,
@@ -169,18 +196,25 @@ public class PipelineAnalysisOrchestrator {
                 run.setAnalysisStatus(status);
 
                 runRepo.save(run);
+
+                log.debug(
+                                "Analysis status updated — run={} status={}",
+                                run.getId(),
+                                status);
         }
 
-        // =====================================================
-        // Severity Ranking
-        // =====================================================
+        // ─────────────────────────────────────────────────────────────────────
+        // SEVERITY PRIORITY
+        // ─────────────────────────────────────────────────────────────────────
 
         private int severityRank(
                         FailureRecord record) {
 
-                return switch (record.getSeverity() == null
-                                ? ""
-                                : record.getSeverity().toUpperCase()) {
+                if (record == null || record.getSeverity() == null) {
+                        return 0;
+                }
+
+                return switch (record.getSeverity().toUpperCase()) {
 
                         case "CRITICAL" -> 4;
 

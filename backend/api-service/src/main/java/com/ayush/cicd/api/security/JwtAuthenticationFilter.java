@@ -71,40 +71,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String requestPath = request.getServletPath();
 
         // --------------------------------------------------------------------
-        // Debug Logs
-        // --------------------------------------------------------------------
-
-        System.out.println("================================================");
-        System.out.println("REQUEST URI: " + request.getRequestURI());
-        System.out.println("AUTH HEADER: " + request.getHeader("Authorization"));
-        System.out.println("================================================");
-
-        // --------------------------------------------------------------------
         // Skip OAuth/Auth endpoints
         // --------------------------------------------------------------------
 
-        if (
-                requestPath.startsWith("/api/v1/auth/github") ||
+        if (requestPath.startsWith("/api/v1/auth") ||
                 requestPath.startsWith("/oauth2") ||
-                requestPath.startsWith("/login/oauth2")
-        ) {
+                requestPath.startsWith("/login/oauth2") ||
+                requestPath.startsWith("/swagger-ui") ||
+                requestPath.startsWith("/v3/api-docs") ||
+                requestPath.startsWith("/actuator")) {
 
             filterChain.doFilter(request, response);
 
             return;
         }
-
-        // --------------------------------------------------------------------
-        // Skip Swagger/OpenAPI endpoints
-        // --------------------------------------------------------------------
-
-        if (isSwaggerRequest(requestPath)) {
-
-            filterChain.doFilter(request, response);
-
-            return;
-        }
-
         // --------------------------------------------------------------------
         // Extract Bearer token
         // --------------------------------------------------------------------
@@ -165,13 +145,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                     System.out.println("AUTHENTICATED USER: " + user.getUsername());
 
-                    UsernamePasswordAuthenticationToken authentication =
-                            new UsernamePasswordAuthenticationToken(
-                                    user,
-                                    null,
-                                    List.of(
-                                            new SimpleGrantedAuthority(
-                                                    "ROLE_USER")));
+                    UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                            user,
+                            null,
+                            List.of(
+                                    new SimpleGrantedAuthority(
+                                            "ROLE_USER")));
 
                     authentication.setDetails(
                             new WebAuthenticationDetailsSource()
@@ -228,12 +207,5 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         return null;
-    }
-
-    private boolean isSwaggerRequest(String path) {
-
-        return path.startsWith("/swagger-ui")
-                || path.startsWith("/v3/api-docs")
-                || path.startsWith("/webjars");
     }
 }

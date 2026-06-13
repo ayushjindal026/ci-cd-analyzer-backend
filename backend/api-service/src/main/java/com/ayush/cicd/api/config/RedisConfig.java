@@ -27,7 +27,7 @@ import java.time.Duration;
 @Configuration
 public class RedisConfig {
 
-    @Value("${spring.data.redis.host:redis}")
+    @Value("${spring.data.redis.host:localhost}")
     private String host;
 
     @Value("${spring.data.redis.port:6379}")
@@ -68,10 +68,6 @@ public class RedisConfig {
         ObjectMapper om = new ObjectMapper();
         om.registerModule(new JavaTimeModule());
         om.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        // Store type info so deserialisation works correctly
-        om.activateDefaultTyping(
-                om.getPolymorphicTypeValidator(),
-                ObjectMapper.DefaultTyping.NON_FINAL);
         return om;
     }
 }

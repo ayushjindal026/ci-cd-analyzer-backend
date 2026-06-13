@@ -46,6 +46,13 @@ public class User extends BaseEntity {
     @Column(name = "avatar_url", length = 500)
     private String avatarUrl;
 
+    @Column(name = "github_username")
+    private String githubUsername;
+
+    @Column(length = 20)
+    @Builder.Default
+    private String plan = "FREE";
+
     /**
      * WHY store the GitHub OAuth token?
      * Allows us to call GitHub API as this user — access private repos,
@@ -55,11 +62,7 @@ public class User extends BaseEntity {
     @Column(name = "github_token", columnDefinition = "TEXT")
     private String githubToken;
 
-    @OneToMany(
-        mappedBy = "user",
-        cascade = {CascadeType.PERSIST, CascadeType.MERGE},
-        fetch = FetchType.LAZY
-    )
+    @OneToMany(mappedBy = "user", cascade = { CascadeType.PERSIST, CascadeType.MERGE }, fetch = FetchType.LAZY)
     @Builder.Default
     private List<MonitoredRepository> repositories = new ArrayList<>();
 }

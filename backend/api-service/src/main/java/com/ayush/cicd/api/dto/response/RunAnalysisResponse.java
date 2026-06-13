@@ -16,7 +16,7 @@ import java.time.Instant;
 public class RunAnalysisResponse {
     private Long id;
     private Long pipelineRunId;
-    private String category;
+    private String failureCategory;
     private String rootCauseSummary;
     private String suggestedFix;
     private Double confidenceScore;

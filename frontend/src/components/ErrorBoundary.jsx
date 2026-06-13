@@ -42,7 +42,7 @@ export class ErrorBoundary extends Component {
                                 Error details (dev only)
                             </summary>
                             <pre className="px-4 py-3 text-xs text-red-300 overflow-auto max-h-48 font-mono leading-relaxed">
-                                {error.toString()}
+                                {String(error?.stack || error)}
                                 {'\n\n'}
                                 {info?.componentStack}
                             </pre>
@@ -57,7 +57,7 @@ export class ErrorBoundary extends Component {
                             <RefreshCw size={15} /> Reload app
                         </button>
                         <button
-                            onClick={() => { this.setState({ hasError: false, error: null, info: null }); window.location.href = '/' }}
+                            onClick={() => { this.setState({ hasError: false, error: null, info: null }); window.location.replace('/') }}
                             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-800 text-gray-200 text-sm font-medium hover:bg-gray-700 transition-colors"
                         >
                             Continue with GitHub

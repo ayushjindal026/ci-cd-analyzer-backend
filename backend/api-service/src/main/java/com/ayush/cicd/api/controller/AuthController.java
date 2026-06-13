@@ -293,14 +293,33 @@ public class AuthController {
                 return ResponseEntity.ok(
                                 Map.of(
                                                 "id", user.getId(),
-                                                "username", user.getUsername(),
+
+                                                "username",
+                                                user.getUsername() != null
+                                                                ? user.getUsername()
+                                                                : "",
+
                                                 "email",
                                                 user.getEmail() != null
                                                                 ? user.getEmail()
                                                                 : "",
+
                                                 "avatarUrl",
                                                 user.getAvatarUrl() != null
                                                                 ? user.getAvatarUrl()
-                                                                : ""));
+                                                                : "",
+
+                                                "githubUsername",
+                                                user.getGithubUsername() != null
+                                                                ? user.getGithubUsername()
+                                                                : "",
+
+                                                "plan",
+                                                user.getPlan() != null
+                                                                ? user.getPlan()
+                                                                : "FREE",
+
+                                                "createdAt",
+                                                user.getCreatedAt()));
         }
 }

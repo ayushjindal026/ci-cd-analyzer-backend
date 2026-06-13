@@ -1,109 +1,451 @@
+import json
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
-from app.config import settings
-from app.dto.schemas import AnalysisRequest, AnalysisResponse, HealthResponse
-from app.services.github_log_fetcher import GitHubLogFetcher
-from app.services.llm_analyzer import LLMAnalyzer
-from app.routes.analyze import router
+from typing import Optional, List
 
-# Configure logging once at startup
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
+from openai import OpenAI
+from pydantic import BaseModel
+
+from app.config import settings
+from app.dto.schemas import (
+    AnalysisRequest,
+    AnalysisResponse,
+    HealthResponse,
+)
+
+from app.routes.analyze import router
+from app.services.github_log_fetcher import GitHubLogFetcher
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ENV
+# ─────────────────────────────────────────────────────────────────────────────
+
+load_dotenv()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LOGGING
+# ─────────────────────────────────────────────────────────────────────────────
+
 logging.basicConfig(
-    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    level=getattr(
+        logging,
+        settings.log_level.upper(),
+        logging.INFO
+    ),
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
     stream=sys.stdout,
 )
+
 logger = logging.getLogger(__name__)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# LLM CLIENT
+# ─────────────────────────────────────────────────────────────────────────────
+
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv(
+        "OPENAI_BASE_URL",
+        "https://api.groq.com/openai/v1"
+    ),
+)
+
+MODEL = os.getenv(
+    "OPENAI_MODEL",
+    "llama-3.1-8b-instant"
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LIFECYCLE
+# ─────────────────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    WHY lifespan instead of @app.on_event("startup")?
-    @app.on_event is deprecated in FastAPI 0.95+.
-    Lifespan is the current pattern — runs setup before yield,
-    teardown after yield. Cleaner and supports async context managers.
-    """
-    logger.info("AI Service starting — model: %s", settings.openai_model)
+
+    logger.info(
+        "AI Service starting — model: %s",
+        MODEL
+    )
+
     yield
+
     logger.info("AI Service shutting down")
 
+# ─────────────────────────────────────────────────────────────────────────────
+# FASTAPI
+# ─────────────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="CI/CD Analyzer — AI Service",
-    description="Classifies CI/CD failures and suggests fixes using LLM",
-    version="1.0.0",
+    title="PipelineIQ AI Service",
+    description="AI-powered CI/CD pipeline failure analyzer",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
-# Instantiate once — shared across all requests
-log_fetcher = GitHubLogFetcher()
-llm_analyzer = LLMAnalyzer()
+# Existing routers
 app.include_router(router)
 
-@app.get("/health", response_model=HealthResponse)
+# ─────────────────────────────────────────────────────────────────────────────
+# SERVICES
+# ─────────────────────────────────────────────────────────────────────────────
+
+log_fetcher = GitHubLogFetcher()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SYSTEM PROMPT
+# ─────────────────────────────────────────────────────────────────────────────
+
+SYSTEM_PROMPT = """
+You are an elite CI/CD failure analysis AI specializing in:
+
+- GitHub Actions
+- Docker
+- Kubernetes
+- Spring Boot
+- Maven
+- Gradle
+- DevOps pipelines
+- Cloud-native systems
+
+CRITICAL:
+You MUST return ONLY valid raw JSON.
+No markdown.
+No explanation.
+No code fences.
+
+Required JSON schema:
+
+{
+  "summary": "brief root cause summary",
+  "rootCause": "technical root cause",
+  "diagnosis": "detailed diagnosis",
+  "recommendation": "main fix recommendation",
+  "remediationSteps": ["step1", "step2"],
+  "failureCategory": "ENUM_VALUE",
+  "severity": "LOW|MEDIUM|HIGH|CRITICAL",
+  "affectedComponent": "service/file/module",
+  "estimatedFixTime": "15 mins",
+  "priority": "P1/P2/P3/P4",
+  "similarPatterns": ["pattern1", "pattern2"],
+  "confidenceScore": 0.0
+}
+
+confidenceScore rules:
+- 0.90+ → very certain
+- 0.70-0.89 → fairly certain
+- below 0.70 → uncertain
+"""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REQUEST/RESPONSE SCHEMAS
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AnalyzeRequest(BaseModel):
+
+    prompt: str
+
+    max_tokens: int = 1000
+
+    temperature: float = 0.1
+
+
+class AnalyzeResponseV2(BaseModel):
+
+    content: str
+
+
+class EmbedRequest(BaseModel):
+
+    text: str
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HEALTH
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get(
+    "/health",
+    response_model=HealthResponse
+)
 def health():
-    """
-    Called by Spring Boot before every analysis request
-    to verify the AI service is reachable.
-    Also used by Docker health checks.
-    """
+
     return {
         "status": "UP",
-        "model": "llama-3.1-8b-instant"
+        "model": MODEL
     }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# MODERN AI ANALYSIS ENDPOINT
+# ─────────────────────────────────────────────────────────────────────────────
 
-@app.post("/analyze", response_model=AnalysisResponse)
-def analyze(request: AnalysisRequest):
+@app.post(
+    "/analyze",
+    response_model=AnalyzeResponseV2
+)
+async def analyze(request: AnalyzeRequest):
+
     """
-    Main endpoint — called by Spring Boot for every failed run.
+    New AI analysis endpoint.
 
-    Flow:
-    1. Fetch console logs from GitHub API
-    2. Send logs + metadata to LLM
-    3. Return structured analysis
+    Java service sends:
+    - prebuilt prompt
+    - structured context
+    - local classifier hints
 
-    WHY synchronous (def not async def)?
-    The GitHub log fetch and OpenAI call are both blocking HTTP calls.
-    Making them async here would require async httpx and async OpenAI client.
-    For our load (one analysis per failed run, not concurrent thousands),
-    synchronous is simpler and perfectly adequate.
-    FastAPI runs sync endpoints in a thread pool automatically.
+    This service:
+    - calls Groq/OpenAI
+    - enforces JSON mode
+    - validates JSON
+    - returns raw JSON string
     """
-    logger.info(
-        "Analysis request: run_id=%d, workflow=%s, status=%s",
-        request.run_id, request.workflow_name, request.status
-    )
 
-    # Only analyse failed runs — guard against misconfigured callers
-    if request.status not in ("FAILURE", "CANCELLED"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Only FAILURE/CANCELLED runs need analysis. Got: {request.status}"
+    try:
+
+        response = client.chat.completions.create(
+
+            model=MODEL,
+
+            max_tokens=request.max_tokens,
+
+            temperature=request.temperature,
+
+            response_format={
+                "type": "json_object"
+            },
+
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": request.prompt
+                }
+            ]
         )
 
-    # Step 1 — fetch real logs from GitHub
+        content = (
+            response
+            .choices[0]
+            .message
+            .content
+        )
+
+        # Validate JSON before returning
+        json.loads(content)
+
+        return AnalyzeResponseV2(
+            content=content
+        )
+
+    except json.JSONDecodeError as ex:
+
+        logger.error(
+            "LLM returned invalid JSON: %s",
+            ex
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Invalid JSON returned by model: {ex}"
+        )
+
+    except Exception as ex:
+
+        logger.error(
+            "AI analysis failed: %s",
+            ex
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(ex)
+        )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LEGACY ANALYSIS FLOW (BACKWARD COMPAT)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.post(
+    "/legacy/analyze",
+    response_model=AnalysisResponse
+)
+def legacy_analyze(request: AnalysisRequest):
+
+    """
+    Original GitHub-log-fetching analysis flow.
+
+    Kept for backward compatibility
+    with older Spring services.
+    """
+
+    logger.info(
+        "Legacy analysis request: run_id=%d workflow=%s",
+        request.run_id,
+        request.workflow_name
+    )
+
+    if request.status not in (
+        "FAILURE",
+        "CANCELLED"
+    ):
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Only FAILURE/CANCELLED "
+                "runs can be analyzed"
+            )
+        )
+
+    # Fetch GitHub logs
     log_content = log_fetcher.fetch_logs(
         owner=request.owner,
         repo_name=request.repo_name,
         external_run_id=request.external_run_id,
     )
 
-    # Step 2 — analyse with LLM
-    result = llm_analyzer.analyse(
-        run_id=request.run_id,
-        workflow_name=request.workflow_name,
-        branch=request.branch,
-        status=request.status,
-        duration_ms=request.duration_ms,
-        log_content=log_content,
-    )
+    # Build prompt dynamically
+    prompt = f"""
+    Workflow: {request.workflow_name}
+    Branch: {request.branch}
+    Status: {request.status}
 
-    logger.info(
-        "Analysis complete: run_id=%d, category=%s, confidence=%.2f",
-        request.run_id, result.category, result.confidence_score
-    )
+    Analyze this CI/CD failure:
 
-    return result
+    {log_content[-4000:]}
+    """
+
+    try:
+
+        response = client.chat.completions.create(
+
+            model=MODEL,
+
+            temperature=0.1,
+
+            max_tokens=1000,
+
+            response_format={
+                "type": "json_object"
+            },
+
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        )
+
+        content = (
+            response
+            .choices[0]
+            .message
+            .content
+        )
+
+        parsed = json.loads(content)
+
+        logger.info(
+            "Legacy analysis complete: run_id=%d",
+            request.run_id
+        )
+
+        return parsed
+
+    except Exception as ex:
+
+        logger.error(
+            "Legacy analysis failed: %s",
+            ex
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(ex)
+        )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EMBEDDINGS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.post("/embed")
+async def embed(payload: EmbedRequest):
+
+    """
+    Generate embeddings for:
+    - similarity search
+    - vector DB
+    - semantic clustering
+    """
+
+    try:
+
+        response = client.embeddings.create(
+
+            model="text-embedding-ada-002",
+
+            input=payload.text
+        )
+
+        return {
+            "embedding":
+                response.data[0].embedding
+        }
+
+    except Exception as ex:
+
+        logger.error(
+            "Embedding generation failed: %s",
+            ex
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(ex)
+        )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LOCAL CLASSIFICATION ONLY
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.post("/classify")
+async def classify(payload: dict):
+
+    """
+    Future local-only classification endpoint.
+
+    Can later integrate:
+    - regex engine
+    - lightweight ML classifier
+    - cached patterns
+
+    without LLM cost.
+    """
+
+    log_text = payload.get("log", "")
+
+    if not log_text:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Missing log field"
+        )
+
+    return {
+        "status": "NOT_IMPLEMENTED",
+        "message": (
+            "Local classifier endpoint "
+            "reserved for future use"
+        )
+    }

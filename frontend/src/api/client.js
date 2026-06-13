@@ -1,8 +1,16 @@
 import axios from 'axios'
 import { tokenStorage, tryRefresh } from '@/context/AuthContext'
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Axios Instance
+// ─────────────────────────────────────────────────────────────────────────────
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  'http://localhost:8081'
+
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: `${API_BASE_URL}/api/v1`,
   timeout: 20000,
   headers: {
     'Content-Type': 'application/json',
@@ -10,31 +18,16 @@ const api = axios.create({
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Inject JWT Access Token
-// ─────────────────────────────────────────────────────────────────────────────
-
-api.interceptors.request.use(
-  config => {
-
-    const token = tokenStorage.getAccess()
-
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-
-    return config
-  },
-
-  error => Promise.reject(error)
-)
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 401 Handling + Refresh Token Rotation
+// Global Refresh / Redirect State
 // ─────────────────────────────────────────────────────────────────────────────
 
 let isRefreshing = false
 
 let failedQueue = []
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Queue Processor
+// ─────────────────────────────────────────────────────────────────────────────
 
 const processQueue = error => {
 
@@ -50,6 +43,35 @@ const processQueue = error => {
   failedQueue = []
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Inject JWT Access Token
+// ─────────────────────────────────────────────────────────────────────────────
+
+api.interceptors.request.use(
+
+  config => {
+
+    const token = tokenStorage.getAccess()
+
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+
+    return config
+  },
+
+  error => Promise.reject(error)
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Response Interceptor
+// Handles:
+// - 401 refresh flow
+// - request queueing
+// - retry prevention
+// - redirect storm prevention
+// ─────────────────────────────────────────────────────────────────────────────
+
 api.interceptors.response.use(
 
   response => response,
@@ -58,26 +80,53 @@ api.interceptors.response.use(
 
     const originalRequest = error.config
 
-    // ------------------------------------------------------------
-    // Only handle 401 once
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------------
+    // No response (network/server down)
+    // ------------------------------------------------------------------------
+
+    if (!error.response) {
+      return Promise.reject(error)
+    }
+
+    const requestUrl = originalRequest?.url || ''
+
+    // ------------------------------------------------------------------------
+    // Never intercept auth endpoints
+    // Prevent infinite refresh recursion
+    // ------------------------------------------------------------------------
 
     if (
-      error.response?.status !== 401 ||
+      requestUrl.includes('/auth/login') ||
+      requestUrl.includes('/auth/refresh') ||
+      requestUrl.includes('/auth/github') ||
+      requestUrl.includes('/auth/callback')
+    ) {
+      return Promise.reject(error)
+    }
+
+    // ------------------------------------------------------------------------
+    // Only handle 401 once
+    // ------------------------------------------------------------------------
+
+    if (
+      error.response.status !== 401 ||
       originalRequest._retry
     ) {
       return Promise.reject(error)
     }
 
-    // ------------------------------------------------------------
-    // Queue requests during refresh
-    // ------------------------------------------------------------
+    // ------------------------------------------------------------------------
+    // Queue requests during token refresh
+    // ------------------------------------------------------------------------
 
     if (isRefreshing) {
 
       return new Promise((resolve, reject) => {
 
-        failedQueue.push({ resolve, reject })
+        failedQueue.push({
+          resolve,
+          reject,
+        })
 
       }).then(() => {
 
@@ -89,15 +138,40 @@ api.interceptors.response.use(
       }).catch(err => Promise.reject(err))
     }
 
+    // ------------------------------------------------------------------------
+    // Begin refresh flow
+    // ------------------------------------------------------------------------
+
     originalRequest._retry = true
 
     isRefreshing = true
 
     try {
 
+      // ----------------------------------------------------------------------
+      // Ensure refresh token exists
+      // ----------------------------------------------------------------------
+
+      const refreshToken = tokenStorage.getRefresh()
+
+      if (!refreshToken) {
+
+        tokenStorage.clear()
+
+        return Promise.reject(error)
+      }
+
+      // ----------------------------------------------------------------------
+      // Refresh access token
+      // ----------------------------------------------------------------------
+
       const refreshed = await tryRefresh()
 
       isRefreshing = false
+
+      // ----------------------------------------------------------------------
+      // Refresh successful
+      // ----------------------------------------------------------------------
 
       if (refreshed) {
 
@@ -109,15 +183,13 @@ api.interceptors.response.use(
         return api(originalRequest)
       }
 
-      // ----------------------------------------------------------
+      // ----------------------------------------------------------------------
       // Refresh failed
-      // ----------------------------------------------------------
+      // ----------------------------------------------------------------------
 
       processQueue(new Error('Session expired'))
 
       tokenStorage.clear()
-
-      window.location.href = '/login'
 
       return Promise.reject(error)
 
@@ -129,9 +201,7 @@ api.interceptors.response.use(
 
       tokenStorage.clear()
 
-      window.location.href = '/login'
-
-      return Promise.reject(refreshError)
+      return Promise.reject(error)
     }
   }
 )
@@ -189,7 +259,7 @@ export const repoApi = {
     api.get(`/repositories/${id}/metrics`),
 
   analyses: id =>
-    api.get(`/repositories/${id}/analyses`),
+    api.get(`/repositories/${id}/analyses`)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

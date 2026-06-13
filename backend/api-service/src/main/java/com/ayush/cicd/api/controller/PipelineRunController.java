@@ -1,5 +1,4 @@
 // PATH: backend/api-service/src/main/java/com/ayush/cicd/api/controller/PipelineRunController.java
-
 package com.ayush.cicd.api.controller;
 
 import com.ayush.cicd.api.dto.response.ApiResponse;
@@ -7,8 +6,8 @@ import com.ayush.cicd.api.dto.response.PagedResponse;
 import com.ayush.cicd.api.dto.response.PipelineRunResponse;
 import com.ayush.cicd.api.service.AuthorizationService;
 import com.ayush.cicd.api.service.PipelineRunService;
+import com.ayush.cicd.api.service.RepositoryService;
 import com.ayush.cicd.common.entity.User;
-import com.ayush.cicd.ingestion.service.GitHubIngestionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
@@ -20,13 +19,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
-/**
- * Pipeline run management APIs.
- *
- * SECURITY:
- * - repository ownership validation required
- * - authenticated user required
- */
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/repositories/{repoId}")
@@ -35,15 +27,11 @@ import org.springframework.web.bind.annotation.*;
 @Tag(name = "Pipeline Runs", description = "Pipeline run management APIs")
 public class PipelineRunController {
 
-        private final GitHubIngestionService gitHubIngestionService;
-
         private final PipelineRunService pipelineRunService;
-
+        private final RepositoryService repositoryService;
         private final AuthorizationService authorizationService;
 
-        // ------------------------------------------------------------------------
-        // Manual Repository Sync
-        // ------------------------------------------------------------------------
+        // ── Manual sync ───────────────────────────────────────────────────────────
 
         @PostMapping("/sync")
         @Operation(summary = "Trigger manual repository sync")
@@ -51,82 +39,49 @@ public class PipelineRunController {
                         @PathVariable Long repoId,
                         @AuthenticationPrincipal User currentUser) {
 
-                // --------------------------------------------------------------------
-                // Ownership validation
-                // --------------------------------------------------------------------
+                authorizationService.requireActiveRepoAccess(repoId, currentUser);
 
-                authorizationService.requireActiveRepoAccess(
-                                repoId,
-                                currentUser);
+                // RepositoryService.syncRepository handles ownership + delegates to ingestion
+                int newRuns = repositoryService.syncRepository(repoId, currentUser);
 
-                log.info(
-                                "Manual sync triggered for repositoryId={} by userId={}",
-                                repoId,
-                                currentUser.getId());
-
-                int newRuns = gitHubIngestionService.syncRepository(repoId);
+                log.info("Manual sync: repoId={} userId={} newRuns={}",
+                                repoId, currentUser.getId(), newRuns);
 
                 return ResponseEntity.ok(
-                                ApiResponse.success(
-                                                newRuns + " new runs ingested",
-                                                "Repository sync completed successfully"));
+                                ApiResponse.success(newRuns + " new runs ingested"));
         }
 
-        // ------------------------------------------------------------------------
-        // List Pipeline Runs
-        // ------------------------------------------------------------------------
+        // ── List runs ─────────────────────────────────────────────────────────────
 
         @GetMapping("/runs")
-        @Operation(summary = "Get repository pipeline runs")
-        public ResponseEntity<ApiResponse<PagedResponse<PipelineRunResponse>>> getRepositoryRuns(
-
+        @Operation(summary = "Get paginated pipeline runs for a repository")
+        public ResponseEntity<PagedResponse<PipelineRunResponse>> getRepositoryRuns(
                         @PathVariable Long repoId,
-
-                        @RequestParam(defaultValue = "0") @Min(value = 0, message = "Page must be >= 0") int page,
-
-                        @RequestParam(defaultValue = "20") @Min(value = 1, message = "Size must be >= 1") @Max(value = 100, message = "Size cannot exceed 100") int size,
-
+                        @RequestParam(defaultValue = "0") @Min(0) int page,
+                        @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
                         @AuthenticationPrincipal User currentUser) {
 
-                authorizationService.requireActiveRepoAccess(
-                                repoId,
-                                currentUser);
+                authorizationService.requireActiveRepoAccess(repoId, currentUser);
 
-                PagedResponse<PipelineRunResponse> runs = pipelineRunService.getRunsForRepository(
-                                repoId,
-                                page,
-                                size);
+                PagedResponse<PipelineRunResponse> runs = pipelineRunService.getRunsForRepository(repoId, page, size);
 
-                return ResponseEntity.ok(
-                                ApiResponse.success(runs));
+                // Return PagedResponse directly — NOT wrapped in ApiResponse
+                // Frontend expects: { content: [...], totalElements, page, size }
+                return ResponseEntity.ok(runs);
         }
 
-        // ------------------------------------------------------------------------
-        // Get Single Pipeline Run
-        // ------------------------------------------------------------------------
+        // ── Get single run ────────────────────────────────────────────────────────
 
         @GetMapping("/runs/{runId}")
-        @Operation(summary = "Get pipeline run by id")
-        public ResponseEntity<ApiResponse<PipelineRunResponse>> getPipelineRun(
-
+        @Operation(summary = "Get a single pipeline run by ID")
+        public ResponseEntity<PipelineRunResponse> getPipelineRun(
                         @PathVariable Long repoId,
-
                         @PathVariable Long runId,
-
                         @AuthenticationPrincipal User currentUser) {
 
-                // --------------------------------------------------------------------
-                // Ownership + repo/run relation validation
-                // --------------------------------------------------------------------
+                authorizationService.requireRunAccess(repoId, runId, currentUser);
 
-                authorizationService.requireRunAccess(
-                                repoId,
-                                runId,
-                                currentUser);
-
-                PipelineRunResponse pipelineRun = pipelineRunService.getRunById(runId);
-
-                return ResponseEntity.ok(
-                                ApiResponse.success(pipelineRun));
+                PipelineRunResponse run = pipelineRunService.getRunById(runId);
+                return ResponseEntity.ok(run);
         }
 }

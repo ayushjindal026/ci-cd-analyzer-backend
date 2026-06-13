@@ -16,4 +16,8 @@ public class RepositoryResponse {
     private String defaultBranch;
     private Instant lastSyncedAt;
     private Instant createdAt;
+    private boolean active;
+    private int totalRuns;
+    private String lastRunStatus;
+    private Instant lastRunAt;
 }

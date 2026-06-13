@@ -18,215 +18,198 @@ import java.util.Optional;
 @Repository
 @Transactional(readOnly = true)
 public interface PipelineRunRepository
-        extends JpaRepository<PipelineRun, Long> {
+                extends JpaRepository<PipelineRun, Long> {
 
-    // =========================================================================
-    // BASIC QUERIES
-    // =========================================================================
+        // =========================================================================
+        // BASIC QUERIES
+        // =========================================================================
 
-    Page<PipelineRun> findByRepository_IdOrderByStartedAtDesc(
-            Long repositoryId,
-            Pageable pageable
-    );
+        Page<PipelineRun> findByRepository_IdOrderByStartedAtDesc(
+                        Long repositoryId,
+                        Pageable pageable);
 
-    List<PipelineRun> findByRepository_Id(
-            Long repositoryId
-    );
+        List<PipelineRun> findByRepository_Id(
+                        Long repositoryId);
 
-    List<PipelineRun> findByRepository_IdAndStartedAtAfterOrderByStartedAtAsc(
-            Long repositoryId,
-            Instant since
-    );
+        List<PipelineRun> findByRepository_IdAndStartedAtAfterOrderByStartedAtAsc(
+                        Long repositoryId,
+                        Instant since);
 
-    Optional<PipelineRun> findByRepository_IdAndExternalRunId(
-            Long repositoryId,
-            String externalRunId
-    );
+        Optional<PipelineRun> findByRepository_IdAndExternalRunId(
+                        Long repositoryId,
+                        String externalRunId);
 
-    List<PipelineRun> findByRepository_IdAndStatusAndStartedAtAfter(
-            Long repositoryId,
-            BuildStatus status,
-            Instant startedAt
-    );
+        List<PipelineRun> findByRepository_IdAndStatusAndStartedAtAfter(
+                        Long repositoryId,
+                        BuildStatus status,
+                        Instant startedAt);
 
-    Optional<PipelineRun> findTopByRepository_IdOrderByStartedAtDesc(
-            Long repositoryId
-    );
+        Optional<PipelineRun> findTopByRepository_IdOrderByStartedAtDesc(
+                        Long repositoryId);
 
-    Optional<PipelineRun> findTopByRepository_IdAndStatusOrderByStartedAtDesc(
-            Long repositoryId,
-            BuildStatus status
-    );
+        Optional<PipelineRun> findTopByRepository_IdAndStatusOrderByStartedAtDesc(
+                        Long repositoryId,
+                        BuildStatus status);
 
-    // =========================================================================
-    // COUNTS
-    // =========================================================================
+        // =========================================================================
+        // COUNTS
+        // =========================================================================
 
-    long countByRepository_IdAndStartedAtAfter(
-            Long repositoryId,
-            Instant since
-    );
+        long countByRepository_IdAndStartedAtAfter(
+                        Long repositoryId,
+                        Instant since);
 
-    long countByRepository_IdAndStatusAndStartedAtAfter(
-            Long repositoryId,
-            BuildStatus status,
-            Instant startedAt
-    );
+        long countByRepository_IdAndStatusAndStartedAtAfter(
+                        Long repositoryId,
+                        BuildStatus status,
+                        Instant startedAt);
 
-    long countByRepository_IdAndStatus(
-            Long repositoryId,
-            BuildStatus status
-    );
+        long countByRepository_IdAndStatus(
+                        Long repositoryId,
+                        BuildStatus status);
 
-    long countByRepository_IdAndStatusAndStartedAtBetween(
-            Long repositoryId,
-            BuildStatus status,
-            Instant start,
-            Instant end
-    );
+        long countByRepository_IdAndStatusAndStartedAtBetween(
+                        Long repositoryId,
+                        BuildStatus status,
+                        Instant start,
+                        Instant end);
 
-    // =========================================================================
-    // METRICS
-    // =========================================================================
+        // =========================================================================
+        // METRICS
+        // =========================================================================
 
-    @Query("""
-            SELECT COUNT(r)
-            FROM PipelineRun r
-            WHERE r.repository.id = :repoId
-              AND r.status = :status
-              AND r.startedAt >= :since
-            """)
-    long countByRepositoryIdAndStatusSince(
-            @Param("repoId") Long repoId,
-            @Param("status") BuildStatus status,
-            @Param("since") Instant since
-    );
+        @Query("""
+                        SELECT COUNT(r)
+                        FROM PipelineRun r
+                        WHERE r.repository.id = :repoId
+                          AND r.status = :status
+                          AND r.startedAt >= :since
+                        """)
+        long countByRepositoryIdAndStatusSince(
+                        @Param("repoId") Long repoId,
+                        @Param("status") BuildStatus status,
+                        @Param("since") Instant since);
 
-    @Query("""
-            SELECT COUNT(r)
-            FROM PipelineRun r
-            WHERE r.repository.id = :repoId
-              AND r.startedAt >= :since
-              AND r.status != 'QUEUED'
-            """)
-    long countCompletedByRepositoryIdSince(
-            @Param("repoId") Long repoId,
-            @Param("since") Instant since
-    );  
+        @Query("""
+                        SELECT COUNT(r)
+                        FROM PipelineRun r
+                        WHERE r.repository.id = :repoId
+                          AND r.startedAt >= :since
+                          AND r.status != 'QUEUED'
+                        """)
+        long countCompletedByRepositoryIdSince(
+                        @Param("repoId") Long repoId,
+                        @Param("since") Instant since);
 
-    @Query("""
-            SELECT AVG(r.durationMs)
-            FROM PipelineRun r
-            WHERE r.repository.id = :repoId
-              AND r.startedAt >= :since
-            """)
-    Double avgDurationMsByRepositoryId(
-            @Param("repoId") Long repoId,
-            @Param("since") Instant since
-    );
+        @Query("""
+                        SELECT AVG(r.durationMs)
+                        FROM PipelineRun r
+                        WHERE r.repository.id = :repoId
+                          AND r.startedAt >= :since
+                        """)
+        Double avgDurationMsByRepositoryId(
+                        @Param("repoId") Long repoId,
+                        @Param("since") Instant since);
 
-    // =========================================================================
-    // DASHBOARD / ANALYTICS
-    // =========================================================================
+        @Query("""
+                        SELECT AVG(r.durationMs)
+                        FROM PipelineRun r
+                        WHERE r.repository.id = :repoId
+                        """)
+        Double averageDurationByRepository(
+                        @Param("repoId") Long repoId);
 
-    @Query("""
-            SELECT r
-            FROM PipelineRun r
-            JOIN FETCH r.repository
-            WHERE r.status = 'FAILED'
-            ORDER BY r.startedAt DESC
-            """)
-    List<PipelineRun> findRecentFailedRuns(
-            Pageable pageable
-    );
+        // =========================================================================
+        // DASHBOARD / ANALYTICS
+        // =========================================================================
 
-    @Query("""
-            SELECT r
-            FROM PipelineRun r
-            JOIN FETCH r.repository
-            WHERE r.analysisStatus = 'PENDING'
-              AND r.status = 'FAILED'
-            ORDER BY r.startedAt DESC
-            """)
-    List<PipelineRun> findPendingAnalysisRuns(
-            Pageable pageable
-    );
+        @Query("""
+                        SELECT r
+                        FROM PipelineRun r
+                        JOIN FETCH r.repository
+                        WHERE r.status = 'FAILED'
+                        ORDER BY r.startedAt DESC
+                        """)
+        List<PipelineRun> findRecentFailedRuns(
+                        Pageable pageable);
 
-    // =========================================================================
-    // FLAKY RUN DETECTION
-    // =========================================================================
+        @Query("""
+                        SELECT r
+                        FROM PipelineRun r
+                        JOIN FETCH r.repository
+                        WHERE r.analysisStatus = 'PENDING'
+                          AND r.status = 'FAILED'
+                        ORDER BY r.startedAt DESC
+                        """)
+        List<PipelineRun> findPendingAnalysisRuns(
+                        Pageable pageable);
 
-    @Query("""
-            SELECT DISTINCT r
-            FROM PipelineRun r
-            WHERE r.repository.id = :repoId
-              AND r.status = 'FAILED'
-              AND r.headSha IS NOT NULL
-              AND EXISTS (
-                  SELECT 1
-                  FROM PipelineRun r2
-                  WHERE r2.repository.id = r.repository.id
-                    AND r2.headSha = r.headSha
-                    AND r2.workflowName = r.workflowName
-                    AND r2.status = 'SUCCESS'
-                    AND r2.startedAt > r.startedAt
-              )
-              AND r.startedAt >= :since
-            """)
-    List<PipelineRun> findFlakyRuns(
-            @Param("repoId") Long repoId,
-            @Param("since") Instant since
-    );
+        // =========================================================================
+        // FLAKY RUN DETECTION
+        // =========================================================================
 
-    // =========================================================================
-    // FETCH JOINS
-    // =========================================================================
+        @Query("""
+                        SELECT DISTINCT r
+                        FROM PipelineRun r
+                        WHERE r.repository.id = :repoId
+                          AND r.status = 'FAILED'
+                          AND r.headSha IS NOT NULL
+                          AND EXISTS (
+                              SELECT 1
+                              FROM PipelineRun r2
+                              WHERE r2.repository.id = r.repository.id
+                                AND r2.headSha = r.headSha
+                                AND r2.workflowName = r.workflowName
+                                AND r2.status = 'SUCCESS'
+                                AND r2.startedAt > r.startedAt
+                          )
+                          AND r.startedAt >= :since
+                        """)
+        List<PipelineRun> findFlakyRuns(
+                        @Param("repoId") Long repoId,
+                        @Param("since") Instant since);
 
-    @Query("""
-            SELECT pr
-            FROM PipelineRun pr
-            JOIN FETCH pr.repository
-            WHERE pr.id = :id
-            """)
-    Optional<PipelineRun> findByIdWithRepository(
-            @Param("id") Long id
-    );
+        // =========================================================================
+        // FETCH JOINS
+        // =========================================================================
 
-    // =========================================================================
-    // INGESTION / SCHEDULER SUPPORT
-    // =========================================================================
+        @Query("""
+                        SELECT pr
+                        FROM PipelineRun pr
+                        JOIN FETCH pr.repository
+                        WHERE pr.id = :id
+                        """)
+        Optional<PipelineRun> findByIdWithRepository(
+                        @Param("id") Long id);
 
-    long countByStatus(
-            BuildStatus status
-    );
+        // =========================================================================
+        // INGESTION / SCHEDULER SUPPORT
+        // =========================================================================
 
-    long countByRepository_Id(
-            Long repositoryId
-    );
+        long countByStatus(
+                        BuildStatus status);
 
-    List<PipelineRun> findByRepository_IdAndStatusIn(
-            Long repositoryId,
-            List<BuildStatus> statuses
-    );
+        long countByRepository_Id(
+                        Long repositoryId);
 
-    Optional<PipelineRun> findByExternalRunId(
-            String externalRunId
-    );
+        List<PipelineRun> findByRepository_IdAndStatusIn(
+                        Long repositoryId,
+                        List<BuildStatus> statuses);
 
-    boolean existsByExternalRunId(
-            String externalRunId
-    );
+        Optional<PipelineRun> findByExternalRunId(
+                        String externalRunId);
 
-    @Modifying
-    @Transactional
-    @Query("""
-        UPDATE PipelineRun r
-        SET r.status = 'CANCELLED'
-        WHERE r.status = 'RUNNING'
-          AND r.startedAt < :threshold
-    """)
-    int cancelStaleRunsBefore(
-            @Param("threshold")
-            Instant threshold
-    );
+        boolean existsByExternalRunId(
+                        String externalRunId);
+
+        @Modifying
+        @Transactional
+        @Query("""
+                            UPDATE PipelineRun r
+                            SET r.status = 'CANCELLED'
+                            WHERE r.status = 'RUNNING'
+                              AND r.startedAt < :threshold
+                        """)
+        int cancelStaleRunsBefore(
+                        @Param("threshold") Instant threshold);
 }

@@ -1,24 +1,24 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate, Link }     from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, RefreshCw, GitBranch, Activity,
   Zap, TrendingUp, CheckCircle, XCircle,
   Clock, AlertTriangle, ExternalLink, Sparkles,
 } from 'lucide-react'
-import { repoApi, runApi, aiApi }       from '@/api/client'
-import { usePolling }                   from '@/hooks/usePolling'
-import { useToast }                     from '@/components/ui/Toast'
-import { StatCard }                     from '@/components/ui/StatCard'
-import { Badge }                        from '@/components/ui/Badge'
-import { Spinner, FullPageSpinner }     from '@/components/ui/Spinner'
-import { ErrorBanner }                  from '@/components/ui'
-import { FailureRateChart }             from '@/components/charts/FailureRateChart'
-import { StageDurationChart }           from '@/components/charts/StageDurationChart'
-import { SuccessRatioChart }            from '@/components/charts/SuccessRatioChart'
-import { RunsTable }                    from '@/components/runs/RunsTable'
-import { InsightCard }                  from '@/components/ai/InsightCard'
-import { RunDetailDrawer }              from '@/components/runs/RunDetailDrawer'
-import { formatDistanceToNow, format }  from 'date-fns'
+import { repoApi, runApi, aiApi } from '@/api/client'
+import { usePolling } from '@/hooks/usePolling'
+import { useToast } from '@/components/ui/Toast'
+import { StatCard } from '@/components/ui/StatCard'
+import { Badge } from '@/components/ui/Badge'
+import { Spinner, FullPageSpinner } from '@/components/ui/Spinner'
+import { ErrorBanner } from '@/components/ui'
+import { FailureRateChart } from '@/components/charts/FailureRateChart'
+import { StageDurationChart } from '@/components/charts/StageDurationChart'
+import { SuccessRatioChart } from '@/components/charts/SuccessRatioChart'
+import { RunsTable } from '@/components/runs/RunsTable'
+import { InsightCard } from '@/components/ai/InsightCard'
+import { RunDetailDrawer } from '@/components/runs/RunDetailDrawer'
+import { formatDistanceToNow, format } from 'date-fns'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDur(ms) {
@@ -29,15 +29,15 @@ function fmtDur(ms) {
 
 function HealthBar({ rate = 0 }) {
   const color = rate >= 85 ? 'bg-emerald-500' : rate >= 60 ? 'bg-amber-500' : 'bg-red-500'
-  const text  = rate >= 85 ? 'text-emerald-600 dark:text-emerald-400'
-              : rate >= 60 ? 'text-amber-600 dark:text-amber-400'
-              :               'text-red-600 dark:text-red-400'
+  const text = rate >= 85 ? 'text-emerald-600 dark:text-emerald-400'
+    : rate >= 60 ? 'text-amber-600 dark:text-amber-400'
+      : 'text-red-600 dark:text-red-400'
   return (
     <div>
       <span className={`text-3xl font-bold ${text}`}>{rate}%</span>
       <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2 mt-2">
         <div className={`${color} h-2 rounded-full transition-all duration-700`}
-             style={{ width: `${rate}%` }} />
+          style={{ width: `${rate}%` }} />
       </div>
     </div>
   )
@@ -79,10 +79,10 @@ function OverviewTab({ metrics, repo }) {
     <div className="space-y-5">
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Runs"   value={metrics.totalRuns?.toLocaleString() ?? '—'} icon={Activity}    accent="brand"   />
-        <StatCard label="Success Rate" value={`${metrics.successRate ?? 0}%`}             icon={CheckCircle} accent="success" />
-        <StatCard label="Failure Rate" value={`${metrics.failureRate ?? 0}%`}             icon={XCircle}     accent="danger"  />
-        <StatCard label="Avg Duration" value={fmtDur(metrics.avgDuration * 1000)}          icon={Clock}       accent="info"    />
+        <StatCard label="Total Runs" value={metrics.totalRuns?.toLocaleString() ?? '—'} icon={Activity} accent="brand" />
+        <StatCard label="Success Rate" value={`${metrics.successRate ?? 0}%`} icon={CheckCircle} accent="success" />
+        <StatCard label="Failure Rate" value={`${metrics.failureRate ?? 0}%`} icon={XCircle} accent="danger" />
+        <StatCard label="Avg Duration" value={fmtDur(metrics.avgDuration * 1000)} icon={Clock} accent="info" />
       </div>
 
       {/* Charts row */}
@@ -122,11 +122,11 @@ function OverviewTab({ metrics, repo }) {
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
           {[
             ['Default branch', repo?.defaultBranch ?? 'main'],
-            ['Last synced',    repo?.lastSyncedAt ? formatDistanceToNow(new Date(repo.lastSyncedAt), { addSuffix: true }) : '—'],
-            ['Added',          repo?.createdAt    ? format(new Date(repo.createdAt), 'MMM d, yyyy') : '—'],
-            ['Source',         repo?.source ?? 'GitHub'],
-            ['Flaky tests',    metrics.flakyTestCount ?? 0],
-            ['Window',         `${metrics.windowDays ?? 14} days`],
+            ['Last synced', repo?.lastSyncedAt ? formatDistanceToNow(new Date(repo.lastSyncedAt), { addSuffix: true }) : '—'],
+            ['Added', repo?.createdAt ? format(new Date(repo.createdAt), 'MMM d, yyyy') : '—'],
+            ['Source', repo?.source ?? 'GitHub'],
+            ['Flaky tests', metrics.flakyTestCount ?? 0],
+            ['Window', `${metrics.windowDays ?? 14} days`],
           ].map(([k, v]) => (
             <div key={k} className="bg-gray-50 dark:bg-gray-800/60 rounded-xl p-3">
               <p className="text-xs text-gray-400 mb-0.5">{k}</p>
@@ -141,16 +141,19 @@ function OverviewTab({ metrics, repo }) {
 
 // ── AI Insights tab ───────────────────────────────────────────────────────────
 function AiInsightsTab({ repoId, analyses, loadingA }) {
-  const { toast }                   = useToast()
+  const { toast } = useToast()
   const [triggering, setTriggering] = useState(false)
 
   const handleTriggerLatest = async () => {
     setTriggering(true)
     try {
       // Fetch latest failed run and trigger analysis
-      const res  = await runApi.repoRuns(repoId, { size: 10 })
-      const runs = Array.isArray(res.data) ? res.data : res.data?.content ?? []
-      const fail = runs.find(r => ['FAILED','failed'].includes(r.status))
+      const res = await runApi.repoRuns(repoId, { size: 10 })
+      const runs =
+        res.data?.data?.content ??
+        res.data?.content ??
+        []
+      const fail = runs.find(r => ['FAILED', 'failed'].includes(r.status))
       if (!fail) { toast.info('No failed runs', 'Nothing to analyse right now.'); return }
       await aiApi.trigger(repoId, fail.id)
       toast.success('AI analysis queued', 'Results will appear here in ~30 seconds.')
@@ -182,21 +185,21 @@ function AiInsightsTab({ repoId, analyses, loadingA }) {
 
       {analyses.map((a, i) => (
         <InsightCard key={a.id ?? i} insight={{
-          severity:         (a.severity ?? 'info').toLowerCase(),
-          stage:            a.stage,
-          title:            a.summary ?? `Run #${a.runId} analysis`,
-          summary:          a.rootCause,
-          detail:           a.diagnosis,
-          recommendation:   a.recommendation,
+          severity: (a.severity ?? 'info').toLowerCase(),
+          stage: a.stage,
+          title: a.summary ?? `Run #${a.runId} analysis`,
+          summary: a.rootCause,
+          detail: a.diagnosis,
+          recommendation: a.recommendation,
           remediationSteps: a.remediationSteps
             ? a.remediationSteps.split('\n').filter(Boolean)
             : [],
-          isFlaky:          a.isFlaky,
-          flakinessScore:   a.flakinessScore,
+          isFlaky: a.isFlaky,
+          flakinessScore: a.flakinessScore,
           estimatedFixTime: a.estimatedFixTime,
-          priority:         a.priority,
-          modelUsed:        a.modelUsed,
-          analysedAt:       a.analysedAt,
+          priority: a.priority,
+          modelUsed: a.modelUsed,
+          analysedAt: a.analysedAt,
         }} />
       ))}
     </div>
@@ -268,19 +271,19 @@ function FlakyTestsTab({ flakyAnalyses }) {
 // Main page
 // ═════════════════════════════════════════════════════════════════════════════
 export default function RepositoryDetails() {
-  const { id }       = useParams()
-  const navigate     = useNavigate()
-  const { toast }    = useToast()
-  const repoId       = Number(id)
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const { toast } = useToast()
+  const repoId = Number(id)
 
-  const [repo,     setRepo]     = useState(null)
-  const [metrics,  setMetrics]  = useState(null)
+  const [repo, setRepo] = useState(null)
+  const [metrics, setMetrics] = useState(null)
   const [analyses, setAnalyses] = useState([])
-  const [loading,  setLoading]  = useState(true)
+  const [loading, setLoading] = useState(true)
   const [loadingA, setLoadingA] = useState(false)
-  const [error,    setError]    = useState(null)
-  const [syncing,  setSyncing]  = useState(false)
-  const [tab,      setTab]      = useState('Overview')
+  const [error, setError] = useState(null)
+  const [syncing, setSyncing] = useState(false)
+  const [tab, setTab] = useState('Overview')
 
   // ── Fetch repo + metrics ──────────────────────────────────────────────────
   const fetchCore = useCallback(async () => {
@@ -289,8 +292,8 @@ export default function RepositoryDetails() {
         repoApi.get(repoId),
         repoApi.metrics(repoId),
       ])
-      setRepo(repoRes.data)
-      setMetrics(metricsRes.data)
+      setRepo(repoRes.data?.data ?? repoRes.data)
+      setMetrics(metricsRes.data?.data ?? metricsRes.data)
       setError(null)
     } catch (e) {
       setError(e.response?.data?.message ?? 'Failed to load repository data.')
@@ -303,14 +306,16 @@ export default function RepositoryDetails() {
   const fetchAnalyses = useCallback(async () => {
     setLoadingA(true)
     try {
-      const res = await repoApi.get(repoId)  // uses /analyses sub-route
-      // Try dedicated analyses endpoint
-      const aRes = await fetch(`/api/v1/repositories/${repoId}/analyses`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('piq_access_token')}` },
-      })
-      if (aRes.ok) setAnalyses(await aRes.json())
-    } catch { /* analyses are optional enrichment */ }
-    finally { setLoadingA(false) }
+      const res = await repoApi.analyses(repoId)
+      setAnalyses(
+        res.data?.data ?? res.data ?? []
+      )
+    } catch (e) {
+      console.error('Failed to load analyses', e)
+      setAnalyses([])
+    } finally {
+      setLoadingA(false)
+    }
   }, [repoId])
 
   useEffect(() => {
@@ -334,7 +339,10 @@ export default function RepositoryDetails() {
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  const flakyAnalyses = analyses.filter(a => a.isFlaky)
+  const flakyAnalyses =
+    Array.isArray(analyses)
+      ? analyses.filter(a => a.isFlaky)
+      : []
 
   if (loading) return <FullPageSpinner />
 
@@ -404,10 +412,10 @@ export default function RepositoryDetails() {
           </div>
           <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
-              { label: 'Total runs',   value: metrics.totalRuns?.toLocaleString() ?? '—'       },
-              { label: 'Failed',       value: metrics.failedRuns?.toLocaleString() ?? '—'      },
-              { label: 'Avg duration', value: fmtDur(metrics.avgDuration * 1000)               },
-              { label: 'Flaky tests',  value: metrics.flakyTestCount ?? 0                      },
+              { label: 'Total runs', value: metrics.totalRuns?.toLocaleString() ?? '—' },
+              { label: 'Failed', value: metrics.failedRuns?.toLocaleString() ?? '—' },
+              { label: 'Avg duration', value: fmtDur(metrics.avgDuration * 1000) },
+              { label: 'Flaky tests', value: metrics.flakyTestCount ?? 0 },
             ].map(({ label, value }) => (
               <div key={label}>
                 <p className="text-xs text-gray-400">{label}</p>
@@ -423,8 +431,8 @@ export default function RepositoryDetails() {
 
       {/* Tab content */}
       <div className="animate-fade-in">
-        {tab === 'Overview'    && <OverviewTab metrics={metrics} repo={repo} />}
-        {tab === 'Runs'        && <RunsTable repoId={repoId} />}
+        {tab === 'Overview' && <OverviewTab metrics={metrics} repo={repo} />}
+        {tab === 'Runs' && <RunsTable repoId={repoId} />}
         {tab === 'AI Insights' && <AiInsightsTab repoId={repoId} analyses={analyses} loadingA={loadingA} />}
         {tab === 'Flaky Tests' && <FlakyTestsTab flakyAnalyses={flakyAnalyses} />}
       </div>

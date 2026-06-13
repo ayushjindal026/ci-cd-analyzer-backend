@@ -10,8 +10,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.HttpStatusCodeException;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -80,7 +83,7 @@ public class GitHubOAuthService {
                                 + urlEncode(redirectUri)
 
                                 + "&scope="
-                                + urlEncode("read:user user:email");
+                                + urlEncode("read:user user:email repo");
         }
 
         // ------------------------------------------------------------------------
@@ -173,15 +176,16 @@ public class GitHubOAuthService {
 
                         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
 
-                        headers.setContentType(MediaType.APPLICATION_JSON);
+                        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 
-                        Map<String, String> requestBody = Map.of(
-                                        "client_id", clientId,
-                                        "client_secret", clientSecret,
-                                        "code", code,
-                                        "redirect_uri", redirectUri);
+                        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
 
-                        HttpEntity<Map<String, String>> requestEntity = new HttpEntity<>(requestBody, headers);
+                        body.add("client_id", clientId);
+                        body.add("client_secret", clientSecret);
+                        body.add("code", code);
+                        body.add("redirect_uri", redirectUri);
+
+                        HttpEntity<MultiValueMap<String, String>> requestEntity = new HttpEntity<>(body, headers);
 
                         ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
 
@@ -192,20 +196,32 @@ public class GitHubOAuthService {
                                         new ParameterizedTypeReference<Map<String, Object>>() {
                                         });
 
-                        Map<String, Object> body = response.getBody();
+                        Map<String, Object> responseBody = response.getBody();
 
-                        if (body == null
-                                        || body.get("access_token") == null) {
+                        if (responseBody == null
+                                        || responseBody.get("access_token") == null) {
 
                                 throw new IllegalStateException(
                                                 "GitHub token exchange failed");
                         }
 
-                        return body
+                        log.info(
+                                        "GitHub token exchange successful for clientId={}",
+                                        clientId);
+
+                        return responseBody
                                         .get("access_token")
                                         .toString();
 
-                } catch (RestClientException e) {
+                } catch (HttpStatusCodeException e) {
+
+                        log.error(
+                                        "GitHub token exchange failed. Status={} Body={}",
+                                        e.getStatusCode(),
+                                        e.getResponseBodyAsString());
+                        throw e;
+
+                } catch (Exception e) {
 
                         log.error(
                                         "GitHub token exchange failed",
@@ -222,7 +238,7 @@ public class GitHubOAuthService {
         // ------------------------------------------------------------------------
 
         private String fetchPrimaryEmail(String githubAccessToken) {
-                
+
                 try {
                         HttpHeaders headers = new HttpHeaders();
 
@@ -237,7 +253,8 @@ public class GitHubOAuthService {
                                         GITHUB_EMAIL_URL,
                                         HttpMethod.GET,
                                         requestEntity,
-                                        new ParameterizedTypeReference<>() {});
+                                        new ParameterizedTypeReference<>() {
+                                        });
 
                         List<Map<String, Object>> emails = response.getBody();
 
@@ -257,13 +274,19 @@ public class GitHubOAuthService {
 
                         return null;
 
-                } catch (RestClientException e) {
-
+                } catch (HttpStatusCodeException e) {
+                        log.error(
+                                        "GitHub token exchange failed. Status={} Body={}",
+                                        e.getStatusCode(),
+                                        e.getResponseBodyAsString());
+                        throw e;
+                } catch (Exception e) {
                         log.warn("Failed to fetch primary GitHub email", e);
                         return null;
                 }
         }
-// GLOBAL GITHUB EMAIL FETCHING FOR MULTIPLE EMAILS
+
+        // GLOBAL GITHUB EMAIL FETCHING FOR MULTIPLE EMAILS
         private Map<String, Object> fetchGitHubProfile(
                         String githubAccessToken) {
 
@@ -275,7 +298,7 @@ public class GitHubOAuthService {
 
                         headers.setAccept(List.of(MediaType.valueOf("application/vnd.github+json")));
 
-                        headers.set("X-GitHub-Api-Version","2022-11-28");
+                        headers.set("X-GitHub-Api-Version", "2022-11-28");
 
                         HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
 
@@ -295,11 +318,15 @@ public class GitHubOAuthService {
 
                         return profile;
 
-                } catch (RestClientException e) {
-
-                        log.error("Failed to fetch GitHub user profile",e);
-
-                        throw new IllegalStateException("Failed to fetch GitHub profile",e);
+                } catch (HttpStatusCodeException e) {
+                        log.error(
+                                        "GitHub token exchange failed. Status={} Body={}",
+                                        e.getStatusCode(),
+                                        e.getResponseBodyAsString());
+                        throw e;
+                } catch (Exception e) {
+                        log.error("Failed to fetch GitHub user profile", e);
+                        throw new IllegalStateException("Failed to fetch GitHub profile", e);
                 }
         }
 

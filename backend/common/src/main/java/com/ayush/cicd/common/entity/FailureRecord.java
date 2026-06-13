@@ -1,6 +1,7 @@
 // PATH: backend/common/src/main/java/com/ayush/cicd/common/entity/FailureRecord.java
 package com.ayush.cicd.common.entity;
 
+import com.ayush.cicd.common.enums.FailureCategory;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.Instant;
@@ -38,16 +39,16 @@ public class FailureRecord {
     private String stage;
 
     @Column(nullable = false, length = 50)
-    private String category;            // maps to FailureCategory enum name
+    private String category; // maps to FailureCategory enum name
 
     @Column(nullable = false, length = 20)
-    private String severity;            // LOW | MEDIUM | HIGH | CRITICAL
+    private String severity; // LOW | MEDIUM | HIGH | CRITICAL
 
     @Column(name = "root_cause_line", length = 1000)
     private String rootCauseLine;
 
     @Column(name = "failing_tests", length = 2000)
-    private String failingTests;        // pipe-delimited test names
+    private String failingTests; // pipe-delimited test names
 
     @Column(name = "stack_trace_summary", columnDefinition = "TEXT")
     private String stackTraceSummary;
@@ -74,7 +75,10 @@ public class FailureRecord {
     @Column(name = "condensed_log", columnDefinition = "TEXT")
     private String condensedLog;
 
-    /** Serialised float[] from text-embedding-3-small. Stored as comma-delimited TEXT. */
+    /**
+     * Serialised float[] from text-embedding-3-small. Stored as comma-delimited
+     * TEXT.
+     */
     @Column(columnDefinition = "TEXT")
     private String embedding;
 

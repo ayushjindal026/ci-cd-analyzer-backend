@@ -16,36 +16,32 @@ export default function OAuthSuccess() {
     const [error, setError] = useState(null)
 
     useEffect(() => {
+
         const params = new URLSearchParams(window.location.search)
 
-        // New dual-token format
-        const accessToken = decodeURIComponent(
-            params.get('access_token') || ''
-        )
+        const accessToken = params.get('access_token')
+        const refreshToken = params.get('refresh_token')
 
-        const refreshToken = decodeURIComponent(
-            params.get('refresh_token') || ''
-        )
-
-        // Legacy single-token format (backwards compat)
-        const legacyToken = params.get('token')
-
-        if (accessToken && refreshToken) {
-            tokenStorage.setBoth(accessToken, refreshToken)
-            window.history.replaceState({}, document.title, '/oauth-success')
-            setTimeout(() => navigate('/', { replace: true }), 700)
-
-        } else if (legacyToken) {
-            // Legacy: only access token provided
-            tokenStorage.setAccess(legacyToken)
-            window.history.replaceState({}, document.title, '/oauth-success')
-            setTimeout(() => navigate('/', { replace: true }), 700)
-
-        } else {
-            setError('No token received from server. Please try signing in again.')
-            setTimeout(() => navigate('/login', { replace: true }), 3000)
+        if (!accessToken || !refreshToken) {
+            setError('Authentication failed')
+            return
         }
-    }, [navigate])
+
+        tokenStorage.setBoth(
+            accessToken,
+            refreshToken
+        )
+
+        // IMPORTANT:
+        // wait one tick so localStorage fully commits
+
+        setTimeout(() => {
+
+            window.location.replace('/')
+
+        }, 100)
+
+    }, [])
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-950">

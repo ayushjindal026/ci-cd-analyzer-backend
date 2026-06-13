@@ -2,6 +2,7 @@ package com.ayush.cicd.ingestion.client;
 
 import com.ayush.cicd.common.entity.PipelineRun;
 import com.ayush.cicd.common.entity.RunAnalysis;
+import com.ayush.cicd.common.enums.FailureCategory;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
@@ -71,7 +72,7 @@ public class AiAnalysisClient {
             return RunAnalysis.builder()
                     .runId(run.getId())
                     .repositoryId(run.getRepository().getId())
-                    .category(response.getCategory())
+                    .failureCategory(FailureCategory.valueOf(response.getFailureCategory()))
                     .rootCause(response.getRootCauseSummary())
                     .recommendation(response.getSuggestedFix())
                     .modelUsed(response.getAnalysedByModel())
@@ -146,7 +147,7 @@ public class AiAnalysisClient {
         @JsonProperty("run_id")
         private Long runId;
 
-        private String category;
+        private String failureCategory;
 
         @JsonProperty("root_cause_summary")
         private String rootCauseSummary;

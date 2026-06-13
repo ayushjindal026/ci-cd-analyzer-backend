@@ -58,6 +58,10 @@ public class PipelineRun {
     @Column(name = "head_sha", length = 40)
     private String headSha;
 
+    /** GitHub numeric workflow run ID (optional but useful for deep links). */
+    @Column(name = "github_run_id")
+    private Long githubRunId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default

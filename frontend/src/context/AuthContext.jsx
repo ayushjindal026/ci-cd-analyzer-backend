@@ -25,7 +25,11 @@ export const tokenStorage = {
 }
 
 // Separate axios instance for auth calls — avoids interceptor loops
-const authHttp = axios.create({ baseURL: '/api/v1', timeout: 10_000 })
+const authHttp = axios.create({
+    baseURL:
+        `${import.meta.env.VITE_API_URL}/api/v1`,
+    timeout: 10000,
+})
 
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(null)
@@ -63,12 +67,26 @@ export function AuthProvider({ children }) {
         }
     }, [])
 
-    useEffect(() => { loadUser() }, [loadUser])
+    useEffect(() => {
+
+        const token = tokenStorage.getAccess()
+
+        if (!token) {
+            setLoading(false)
+            return
+        }
+
+        loadUser()
+
+    }, [loadUser])
 
     const logout = async (logoutAll = false) => {
         try {
             await authHttp.post('/auth/logout',
-                { refresh_token: tokenStorage.getRefresh(), logout_all: logoutAll },
+                {
+                    refreshToken: tokenStorage.getRefresh(),
+                    logoutAll,
+                },
                 { headers: { Authorization: `Bearer ${tokenStorage.getAccess()}` } }
             )
         } catch { /* ignore — clear locally regardless */ }
@@ -86,17 +104,41 @@ export function AuthProvider({ children }) {
 
 // ── Refresh helper — used by both AuthProvider and api/client.js ──────────────
 export async function tryRefresh() {
+
     const refreshToken = tokenStorage.getRefresh()
-    if (!refreshToken) return false
+
+    if (!refreshToken) {
+        return false
+    }
+
     try {
-        const res = await axios.post('/api/v1/auth/refresh',
-            { refresh_token: refreshToken },
-            { headers: { 'Content-Type': 'application/json' } }
+
+        const res = await axios.post(
+            `${import.meta.env.VITE_API_URL}/api/v1/auth/refresh`,
+            {
+                refreshToken,
+            },
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            }
         )
-        tokenStorage.setBoth(res.data.access_token, res.data.refresh_token)
+
+        // IMPORTANT:
+        // backend returns camelCase
+
+        tokenStorage.setBoth(
+            res.data.accessToken,
+            res.data.refreshToken
+        )
+
         return true
-    } catch {
+
+    } catch (err) {
+
         tokenStorage.clear()
+
         return false
     }
 }

@@ -34,222 +34,222 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class AuthorizationService {
 
-    private final MonitoredRepositoryRepository repositoryRepository;
+        private final MonitoredRepositoryRepository repositoryRepository;
 
-    private final PipelineRunRepository pipelineRunRepository;
+        private final PipelineRunRepository pipelineRunRepository;
 
-    // ------------------------------------------------------------------------
-    // Repository Authorization
-    // ------------------------------------------------------------------------
+        // ------------------------------------------------------------------------
+        // Repository Authorization
+        // ------------------------------------------------------------------------
 
-    /**
-     * Requires repository ownership access.
-     *
-     * Returns repository if:
-     * - exists
-     * - owned by current user
-     *
-     * Otherwise throws ResourceNotFoundException.
-     */
-    public MonitoredRepository requireRepoAccess(
-            Long repoId,
-            User currentUser) {
+        /**
+         * Requires repository ownership access.
+         *
+         * Returns repository if:
+         * - exists
+         * - owned by current user
+         *
+         * Otherwise throws ResourceNotFoundException.
+         */
+        public MonitoredRepository requireRepoAccess(
+                        Long repoId,
+                        User currentUser) {
 
-        validateAuthenticatedUser(currentUser);
+                validateAuthenticatedUser(currentUser);
 
-        MonitoredRepository repository = repositoryRepository.findById(repoId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "MonitoredRepository",
-                        repoId));
+                MonitoredRepository repository = repositoryRepository.findById(repoId)
+                                .orElseThrow(() -> new ResourceNotFoundException(
+                                                "MonitoredRepository",
+                                                repoId));
 
-        if (!isOwner(repository, currentUser)) {
+                if (!isOwner(repository, currentUser)) {
 
-            logUnauthorizedRepoAccess(
-                    currentUser,
-                    repoId,
-                    repository);
+                        logUnauthorizedRepoAccess(
+                                        currentUser,
+                                        repoId,
+                                        repository);
 
-            throw new ResourceNotFoundException(
-                    "MonitoredRepository",
-                    repoId);
+                        throw new ResourceNotFoundException(
+                                        "MonitoredRepository",
+                                        repoId);
+                }
+
+                return repository;
         }
 
-        return repository;
-    }
+        /**
+         * Requires repository ownership + active repository.
+         */
+        public MonitoredRepository requireActiveRepoAccess(
+                        Long repoId,
+                        User currentUser) {
 
-    /**
-     * Requires repository ownership + active repository.
-     */
-    public MonitoredRepository requireActiveRepoAccess(
-            Long repoId,
-            User currentUser) {
+                MonitoredRepository repository = requireRepoAccess(repoId, currentUser);
 
-        MonitoredRepository repository = requireRepoAccess(repoId, currentUser);
+                if (!repository.isActive()) {
 
-        if (!repository.isActive()) {
+                        throw new ResourceNotFoundException(
+                                        "MonitoredRepository",
+                                        repoId);
+                }
 
-            throw new ResourceNotFoundException(
-                    "MonitoredRepository",
-                    repoId);
+                return repository;
         }
 
-        return repository;
-    }
+        // ------------------------------------------------------------------------
+        // Pipeline Run Authorization
+        // ------------------------------------------------------------------------
 
-    // ------------------------------------------------------------------------
-    // Pipeline Run Authorization
-    // ------------------------------------------------------------------------
+        /**
+         * Requires pipeline run ownership access.
+         */
+        public PipelineRun requireRunAccess(
+                        Long runId,
+                        User currentUser) {
 
-    /**
-     * Requires pipeline run ownership access.
-     */
-    public PipelineRun requireRunAccess(
-            Long runId,
-            User currentUser) {
+                validateAuthenticatedUser(currentUser);
 
-        validateAuthenticatedUser(currentUser);
+                PipelineRun pipelineRun = pipelineRunRepository.findById(runId)
+                                .orElseThrow(() -> new ResourceNotFoundException(
+                                                "PipelineRun",
+                                                runId));
 
-        PipelineRun pipelineRun = pipelineRunRepository.findById(runId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "PipelineRun",
-                        runId));
+                if (pipelineRun.getRepository() == null
+                                || !isOwner(
+                                                pipelineRun.getRepository(),
+                                                currentUser)) {
 
-        if (pipelineRun.getRepository() == null
-                || !isOwner(
-                        pipelineRun.getRepository(),
-                        currentUser)) {
+                        logUnauthorizedRunAccess(
+                                        currentUser,
+                                        runId,
+                                        pipelineRun);
 
-            logUnauthorizedRunAccess(
-                    currentUser,
-                    runId,
-                    pipelineRun);
+                        throw new ResourceNotFoundException(
+                                        "PipelineRun",
+                                        runId);
+                }
 
-            throw new ResourceNotFoundException(
-                    "PipelineRun",
-                    runId);
+                return pipelineRun;
         }
 
-        return pipelineRun;
-    }
+        /**
+         * Requires:
+         * - repo ownership
+         * - run belongs to repo
+         */
+        public PipelineRun requireRunAccess(
+                        Long repoId,
+                        Long runId,
+                        User currentUser) {
 
-    /**
-     * Requires:
-     * - repo ownership
-     * - run belongs to repo
-     */
-    public PipelineRun requireRunAccess(
-            Long repoId,
-            Long runId,
-            User currentUser) {
+                MonitoredRepository repository = requireRepoAccess(repoId, currentUser);
 
-        MonitoredRepository repository = requireRepoAccess(repoId, currentUser);
+                PipelineRun pipelineRun = pipelineRunRepository.findById(runId)
+                                .orElseThrow(() -> new ResourceNotFoundException(
+                                                "PipelineRun",
+                                                runId));
 
-        PipelineRun pipelineRun = pipelineRunRepository.findById(runId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "PipelineRun",
-                        runId));
+                if (pipelineRun.getRepository() == null
+                                || !pipelineRun.getRepository()
+                                                .getId()
+                                                .equals(repository.getId())) {
 
-        if (pipelineRun.getRepository() == null
-                || !pipelineRun.getRepository()
-                        .getId()
-                        .equals(repository.getId())) {
+                        throw new ResourceNotFoundException(
+                                        "PipelineRun",
+                                        runId);
+                }
 
-            throw new ResourceNotFoundException(
-                    "PipelineRun",
-                    runId);
+                return pipelineRun;
         }
 
-        return pipelineRun;
-    }
+        // ------------------------------------------------------------------------
+        // Boolean Access Checks
+        // ------------------------------------------------------------------------
 
-    // ------------------------------------------------------------------------
-    // Boolean Access Checks
-    // ------------------------------------------------------------------------
+        public boolean canAccessRepo(
+                        Long repoId,
+                        User currentUser) {
 
-    public boolean canAccessRepo(
-            Long repoId,
-            User currentUser) {
+                if (currentUser == null) {
+                        return false;
+                }
 
-        if (currentUser == null) {
-            return false;
+                return repositoryRepository.findById(repoId)
+                                .map(repository -> isOwner(repository, currentUser))
+                                .orElse(false);
         }
 
-        return repositoryRepository.findById(repoId)
-                .map(repository -> isOwner(repository, currentUser))
-                .orElse(false);
-    }
+        public boolean canAccessRun(
+                        Long runId,
+                        User currentUser) {
 
-    public boolean canAccessRun(
-            Long runId,
-            User currentUser) {
+                if (currentUser == null) {
+                        return false;
+                }
 
-        if (currentUser == null) {
-            return false;
+                return pipelineRunRepository.findById(runId)
+                                .map(run -> run.getRepository() != null
+                                                && isOwner(
+                                                                run.getRepository(),
+                                                                currentUser))
+                                .orElse(false);
         }
 
-        return pipelineRunRepository.findById(runId)
-                .map(run -> run.getRepository() != null
-                        && isOwner(
-                                run.getRepository(),
-                                currentUser))
-                .orElse(false);
-    }
+        // ------------------------------------------------------------------------
+        // Private Helpers
+        // ------------------------------------------------------------------------
 
-    // ------------------------------------------------------------------------
-    // Private Helpers
-    // ------------------------------------------------------------------------
+        private boolean isOwner(
+                        MonitoredRepository repository,
+                        User currentUser) {
 
-    private boolean isOwner(
-            MonitoredRepository repository,
-            User currentUser) {
-
-        return repository.getUser() != null
-                && repository.getUser().getId() != null
-                && repository.getUser()
-                        .getId()
-                        .equals(currentUser.getId());
-    }
-
-    private void validateAuthenticatedUser(User currentUser) {
-
-        if (currentUser == null
-                || currentUser.getId() == null) {
-
-            throw new IllegalStateException(
-                    "Authenticated user required");
+                return repository.getUser() != null
+                                && repository.getUser().getId() != null
+                                && repository.getUser()
+                                                .getId()
+                                                .equals(currentUser.getId());
         }
-    }
 
-    private void logUnauthorizedRepoAccess(
-            User currentUser,
-            Long repoId,
-            MonitoredRepository repository) {
+        private void validateAuthenticatedUser(User currentUser) {
 
-        log.warn(
-                "Unauthorized repository access attempt: " +
-                        "userId={} repoId={} ownerId={}",
-                currentUser.getId(),
-                repoId,
-                repository.getUser() != null
-                        ? repository.getUser().getId()
-                        : "unknown");
-    }
+                if (currentUser == null
+                                || currentUser.getId() == null) {
 
-    private void logUnauthorizedRunAccess(
-            User currentUser,
-            Long runId,
-            PipelineRun pipelineRun) {
+                        throw new IllegalStateException(
+                                        "Authenticated user required");
+                }
+        }
 
-        log.warn(
-                "Unauthorized pipeline run access attempt: " +
-                        "userId={} runId={} ownerId={}",
-                currentUser.getId(),
-                runId,
-                pipelineRun.getRepository() != null
-                        && pipelineRun.getRepository().getUser() != null
-                                ? pipelineRun.getRepository()
-                                        .getUser()
-                                        .getId()
-                                : "unknown");
-    }
+        private void logUnauthorizedRepoAccess(
+                        User currentUser,
+                        Long repoId,
+                        MonitoredRepository repository) {
+
+                log.warn(
+                                "Unauthorized repository access attempt: " +
+                                                "userId={} repoId={} ownerId={}",
+                                currentUser.getId(),
+                                repoId,
+                                repository.getUser() != null
+                                                ? repository.getUser().getId()
+                                                : "unknown");
+        }
+
+        private void logUnauthorizedRunAccess(
+                        User currentUser,
+                        Long runId,
+                        PipelineRun pipelineRun) {
+
+                log.warn(
+                                "Unauthorized pipeline run access attempt: " +
+                                                "userId={} runId={} ownerId={}",
+                                currentUser.getId(),
+                                runId,
+                                pipelineRun.getRepository() != null
+                                                && pipelineRun.getRepository().getUser() != null
+                                                                ? pipelineRun.getRepository()
+                                                                                .getUser()
+                                                                                .getId()
+                                                                : "unknown");
+        }
 }

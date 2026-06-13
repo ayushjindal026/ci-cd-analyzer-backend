@@ -18,34 +18,32 @@ public interface AnalyticsFailureRecordRepository extends JpaRepository<FailureR
     // ─────────────────────────────────────────────────────────────────────────
 
     @Query("""
-        SELECT f.stage, COUNT(f)
-        FROM FailureRecord f
-        WHERE f.repositoryId = :repoId
-          AND f.occurredAt >= :since
-        GROUP BY f.stage
-        ORDER BY COUNT(f) DESC
-    """)
+                SELECT f.stage, COUNT(f)
+                FROM FailureRecord f
+                WHERE f.repositoryId = :repoId
+                  AND f.occurredAt >= :since
+                GROUP BY f.stage
+                ORDER BY COUNT(f) DESC
+            """)
     List<Object[]> countByStage(
             @Param("repoId") Long repoId,
-            @Param("since") Instant since
-    );
+            @Param("since") Instant since);
 
     // ─────────────────────────────────────────────────────────────────────────
     // Category Analytics
     // ─────────────────────────────────────────────────────────────────────────
 
     @Query("""
-        SELECT f.category, COUNT(f)
-        FROM FailureRecord f
-        WHERE f.repositoryId = :repoId
-          AND f.occurredAt >= :since
-        GROUP BY f.category
-        ORDER BY COUNT(f) DESC
-    """)
+                SELECT f.category, COUNT(f)
+                FROM FailureRecord f
+                WHERE f.repositoryId = :repoId
+                  AND f.occurredAt >= :since
+                GROUP BY f.category
+                ORDER BY COUNT(f) DESC
+            """)
     List<Object[]> countByCategory(
             @Param("repoId") Long repoId,
-            @Param("since") Instant since
-    );
+            @Param("since") Instant since);
 
     // ─────────────────────────────────────────────────────────────────────────
     // Recent Failures
@@ -53,8 +51,7 @@ public interface AnalyticsFailureRecordRepository extends JpaRepository<FailureR
 
     List<FailureRecord> findByRepositoryIdAndOccurredAtAfter(
             Long repositoryId,
-            Instant since
-    );
+            Instant since);
 
     // ─────────────────────────────────────────────────────────────────────────
     // Most Severe Failures
@@ -62,24 +59,22 @@ public interface AnalyticsFailureRecordRepository extends JpaRepository<FailureR
 
     List<FailureRecord> findByRepositoryIdOrderBySeverityDescOccurredAtDesc(
             Long repositoryId,
-            Pageable pageable
-    );
+            Pageable pageable);
 
     // ─────────────────────────────────────────────────────────────────────────
     // Flaky Pipelines
     // ─────────────────────────────────────────────────────────────────────────
 
     @Query("""
-        SELECT f
-        FROM FailureRecord f
-        WHERE f.repositoryId = :repoId
-          AND f.flakinessScore >= :threshold
-        ORDER BY f.flakinessScore DESC
-    """)
+                SELECT f
+                FROM FailureRecord f
+                WHERE f.repositoryId = :repoId
+                  AND f.flakinessScore >= :threshold
+                ORDER BY f.flakinessScore DESC
+            """)
     List<FailureRecord> findFlakyFailures(
             @Param("repoId") Long repoId,
-            @Param("threshold") Double threshold
-    );
+            @Param("threshold") Double threshold);
 
     // ─────────────────────────────────────────────────────────────────────────
     // OOM / Timeout Analytics
@@ -94,15 +89,14 @@ public interface AnalyticsFailureRecordRepository extends JpaRepository<FailureR
     // ─────────────────────────────────────────────────────────────────────────
 
     @Query("""
-        SELECT f.signature, COUNT(f)
-        FROM FailureRecord f
-        WHERE f.repositoryId = :repoId
-          AND f.signature IS NOT NULL
-        GROUP BY f.signature
-        ORDER BY COUNT(f) DESC
-    """)
+                SELECT f.signature, COUNT(f)
+                FROM FailureRecord f
+                WHERE f.repositoryId = :repoId
+                  AND f.signature IS NOT NULL
+                GROUP BY f.signature
+                ORDER BY COUNT(f) DESC
+            """)
     List<Object[]> topFailureSignatures(
             @Param("repoId") Long repoId,
-            Pageable pageable
-    );
+            Pageable pageable);
 }

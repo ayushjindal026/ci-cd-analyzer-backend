@@ -1,4 +1,4 @@
-package com.ayush.cicd.api.config; 
+package com.ayush.cicd.api.config;
 
 import com.ayush.cicd.api.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
@@ -8,11 +8,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.cors.*;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
 
@@ -21,81 +22,133 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    private final JwtAuthenticationFilter JwtAuthenticationFilter;
+        private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    @Value("${frontend.url:http://localhost:3000}")
-    private String frontendUrl;
+        @Value("${frontend.url:http://localhost:3000}")
+        private String frontendUrl;
 
-    @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        @Bean
+        public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
-        return http
+                return http
 
-                // Disable CSRF for REST APIs
-                .csrf(AbstractHttpConfigurer::disable)
+                                /*
+                                 * CSRF
+                                 * Disable globally for stateless JWT APIs
+                                 * OR ignore only webhook + websocket endpoints
+                                 */
+                                .csrf(csrf -> csrf.ignoringRequestMatchers(
+                                                "/stomp/**",
+                                                "/ws/**",
+                                                "/api/v1/webhook/**"))
 
-                // Enable CORS
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                                /*
+                                 * CORS
+                                 */
+                                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
-                // Stateless JWT authentication
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                                /*
+                                 * Stateless Session
+                                 */
+                                .sessionManagement(session -> session
+                                                .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-                // Authorization rules
-                .authorizeHttpRequests(auth -> auth
+                                /*
+                                 * Authorization Rules
+                                 */
+                                .authorizeHttpRequests(auth -> auth
 
-                        // Public APIs
-                        .requestMatchers(HttpMethod.GET,
-                                "/api/v1/health")
-                        .permitAll()
+                                                /*
+                                                 * Public GET endpoints
+                                                 */
+                                                .requestMatchers(
+                                                                HttpMethod.GET,
+                                                                "/api/v1/health",
+                                                                "/actuator/health")
+                                                .permitAll()
 
-                        .requestMatchers(
-                                "/api/v1/auth/**",
-                                "/api/v1/webhook/**",
-                                "/swagger-ui/**",
-                                "/swagger-ui.html",
-                                "/v3/api-docs/**",
-                                "/actuator/health")
-                        .permitAll()
+                                                /*
+                                                 * Public endpoints
+                                                 */
+                                                .requestMatchers(
+                                                                "/api/v1/auth/**",
+                                                                "/api/v1/webhook/**",
 
-                        // Everything else protected
-                        .anyRequest().authenticated())
+                                                                // WebSocket / SockJS
+                                                                "/stomp/**",
+                                                                "/ws/**",
 
-                // JWT Filter
-                .addFilterBefore(
-                        JwtAuthenticationFilter,
-                        UsernamePasswordAuthenticationFilter.class)
+                                                                // Swagger
+                                                                "/swagger-ui/**",
+                                                                "/swagger-ui.html",
+                                                                "/v3/api-docs/**")
+                                                .permitAll()
 
-                .build();
-    }
+                                                /*
+                                                 * Everything else secured
+                                                 */
+                                                .anyRequest().authenticated())
 
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
+                                /*
+                                 * JWT Filter
+                                 */
+                                .addFilterBefore(
+                                                jwtAuthenticationFilter,
+                                                UsernamePasswordAuthenticationFilter.class)
 
-        CorsConfiguration config = new CorsConfiguration();
+                                .build();
+        }
 
-        config.setAllowedOrigins(List.of(
-                frontendUrl,
-                "http://localhost:3000",
-                "http://localhost:5173"));
+        @Bean
+        public CorsConfigurationSource corsConfigurationSource() {
 
-        config.setAllowedMethods(List.of(
-                "GET",
-                "POST",
-                "PUT",
-                "DELETE",
-                "PATCH",
-                "OPTIONS"));
+                CorsConfiguration config = new CorsConfiguration();
 
-        config.setAllowedHeaders(List.of("*"));
+                /*
+                 * Allowed Origins
+                 */
+                config.setAllowedOrigins(List.of(
+                                frontendUrl,
+                                "http://localhost:3000",
+                                "http://localhost:5173"));
 
-        config.setAllowCredentials(true);
+                /*
+                 * Allowed Methods
+                 */
+                config.setAllowedMethods(List.of(
+                                "GET",
+                                "POST",
+                                "PUT",
+                                "DELETE",
+                                "PATCH",
+                                "OPTIONS"));
 
-        config.setMaxAge(3600L);
+                /*
+                 * Allowed Headers
+                 */
+                config.setAllowedHeaders(List.of("*"));
 
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+                /*
+                 * Exposed Headers
+                 */
+                config.setExposedHeaders(List.of(
+                                "Authorization",
+                                "Content-Type"));
 
-        source.registerCorsConfiguration("/**", config);
+                /*
+                 * Credentials
+                 */
+                config.setAllowCredentials(true);
 
-        return source;
-    }
+                /*
+                 * Cache preflight response
+                 */
+                config.setMaxAge(3600L);
+
+                UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+
+                source.registerCorsConfiguration("/**", config);
+
+                return source;
+        }
 }

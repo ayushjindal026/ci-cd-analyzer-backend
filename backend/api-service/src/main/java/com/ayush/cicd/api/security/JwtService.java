@@ -220,6 +220,39 @@ public class JwtService {
     }
 
     // ------------------------------------------------------------------------
+    // WebSocket / Spring Security Compatibility
+    // ------------------------------------------------------------------------
+
+    /**
+     * Compatibility alias for WebSocket auth flow.
+     */
+    public String extractUsername(String token) {
+        return getUsername(token);
+    }
+
+    /**
+     * Compatibility alias for WebSocket auth flow.
+     */
+    public boolean validateToken(String token) {
+        return isValid(token);
+    }
+
+    /**
+     * Extract Spring Security authorities from token.
+     *
+     * Current implementation:
+     * no roles embedded yet.
+     *
+     * Future:
+     * parse roles/authorities claims.
+     */
+    public java.util.Collection<? extends org.springframework.security.core.GrantedAuthority> extractAuthoritiesFromToken(
+            String token) {
+
+        return java.util.List.of();
+    }
+
+    // ------------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------------
 

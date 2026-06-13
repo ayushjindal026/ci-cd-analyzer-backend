@@ -1,17 +1,23 @@
-// PATH: backend/api-service/src/main/java/com/ayush/cicd/api/controller/RepositoryController.java
-
 package com.ayush.cicd.api.controller;
 
 import com.ayush.cicd.api.dto.request.AddRepositoryRequest;
 import com.ayush.cicd.api.dto.response.ApiResponse;
+import com.ayush.cicd.api.dto.response.RepoMetricsDto;
 import com.ayush.cicd.api.dto.response.RepositoryResponse;
+import com.ayush.cicd.api.service.AuthorizationService;
+import com.ayush.cicd.api.service.MetricsAggregatorService;
 import com.ayush.cicd.api.service.RepositoryService;
+import com.ayush.cicd.common.entity.RunAnalysis;
 import com.ayush.cicd.common.entity.User;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+
 import jakarta.validation.Valid;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -19,18 +25,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-/**
- * Repository Management APIs.
- *
- * RESPONSIBILITIES:
- * - add monitored repositories
- * - fetch repositories
- * - deactivate repositories
- *
- * SECURITY:
- * - all operations scoped to authenticated user
- * - ownership enforced inside RepositoryService
- */
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/repositories")
@@ -40,25 +34,28 @@ public class RepositoryController {
 
         private final RepositoryService repositoryService;
 
-        // ------------------------------------------------------------------------
-        // List Repositories
-        // ------------------------------------------------------------------------
+        private final MetricsAggregatorService metricsAggregatorService;
+
+        private final AuthorizationService authorizationService;
+
+        // ─────────────────────────────────────────────────────────
+        // LIST REPOSITORIES
+        // ─────────────────────────────────────────────────────────
 
         @GetMapping
-        @Operation(summary = "Get all repositories for current user")
         public ResponseEntity<ApiResponse<List<RepositoryResponse>>> getRepositories(
                         @AuthenticationPrincipal User currentUser) {
 
-                List<RepositoryResponse> repositories = repositoryService.findAllActiveForUser(
-                                currentUser);
+                System.out.println("CURRENT USER = " + currentUser);
 
-                return ResponseEntity.ok(
-                                ApiResponse.success(repositories));
+                List<RepositoryResponse> repositories = repositoryService.findAllActiveForUser(currentUser);
+
+                return ResponseEntity.ok(ApiResponse.success(repositories));
         }
 
-        // ------------------------------------------------------------------------
-        // Get Repository
-        // ------------------------------------------------------------------------
+        // ─────────────────────────────────────────────────────────
+        // GET REPOSITORY
+        // ─────────────────────────────────────────────────────────
 
         @GetMapping("/{repositoryId}")
         @Operation(summary = "Get repository by id")
@@ -66,17 +63,15 @@ public class RepositoryController {
                         @PathVariable Long repositoryId,
                         @AuthenticationPrincipal User currentUser) {
 
-                RepositoryResponse repository = repositoryService.findByIdForUser(
-                                repositoryId,
-                                currentUser);
+                RepositoryResponse repository = repositoryService.findByIdForUser(repositoryId, currentUser);
 
                 return ResponseEntity.ok(
                                 ApiResponse.success(repository));
         }
 
-        // ------------------------------------------------------------------------
-        // Add Repository
-        // ------------------------------------------------------------------------
+        // ─────────────────────────────────────────────────────────
+        // ADD REPOSITORY
+        // ─────────────────────────────────────────────────────────
 
         @PostMapping
         @Operation(summary = "Add repository for monitoring")
@@ -88,26 +83,18 @@ public class RepositoryController {
                                 "Adding repository for userId={}",
                                 currentUser.getId());
 
-                RepositoryResponse createdRepository = repositoryService.addRepository(
-                                request,
-                                currentUser);
+                RepositoryResponse createdRepository = repositoryService.addRepository(request, currentUser);
 
                 return ResponseEntity.status(HttpStatus.CREATED)
-                                .body(
-                                                ApiResponse.success(
-                                                                createdRepository,
-                                                                "Repository added successfully"));
+                                .body(ApiResponse.success(
+                                                createdRepository,
+                                                "Repository added successfully"));
         }
 
-        // ------------------------------------------------------------------------
-        // Deactivate Repository
-        // ------------------------------------------------------------------------
+        // ─────────────────────────────────────────────────────────
+        // DEACTIVATE REPOSITORY
+        // ─────────────────────────────────────────────────────────
 
-        /**
-         * Soft delete.
-         *
-         * Repository remains persisted but marked inactive.
-         */
         @DeleteMapping("/{repositoryId}")
         @Operation(summary = "Deactivate repository")
         public ResponseEntity<ApiResponse<Void>> deactivateRepository(

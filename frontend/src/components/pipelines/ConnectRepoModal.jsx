@@ -89,7 +89,7 @@ export function ConnectRepoModal({ open, onClose, onConnected, connectedRepos = 
         setLoading(true); setError(null)
         try {
             const res = await githubApi.listUserRepos({ sort: 'pushed', per_page: 50 })
-            setRepos(res.data ?? [])
+            setRepos(res.data?.data ?? [])
         } catch (e) {
             setError(e.response?.data?.message ?? 'Failed to load your GitHub repositories.')
         } finally {
@@ -114,21 +114,14 @@ export function ConnectRepoModal({ open, onClose, onConnected, connectedRepos = 
         try {
 
             await repoApi.add({
-
-                githubRepoId:
-                    ghRepo.id,
-
-                fullName:
-                    ghRepo.fullName,
-
-                defaultBranch:
-                    ghRepo.defaultBranch ?? 'main',
-
-                privateRepo:
-                    ghRepo.isPrivate ?? false,
-
-                htmlUrl:
-                    ghRepo.htmlUrl ?? '',
+                githubRepoId: ghRepo.id,
+                fullName: ghRepo.fullName,
+                owner: ghRepo.owner?.login,
+                repoName: ghRepo.name,
+                defaultBranch: ghRepo.defaultBranch ?? 'main',
+                privateRepo: ghRepo.isPrivate ?? false,
+                htmlUrl: ghRepo.htmlUrl ?? '',
+                source: 'GITHUB_ACTIONS',
             })
 
             toast.success(
@@ -159,7 +152,9 @@ export function ConnectRepoModal({ open, onClose, onConnected, connectedRepos = 
 
     // ── Set of already-connected full names ───────────────────────────────────
     const connectedSet = new Set(
-        connectedRepos.map(r => `${r.owner}/${r.repoName}`)
+        (connectedRepos || []).map(
+            r => r.fullName ?? `${r.owner}/${r.repoName}`
+        )
     )
 
     return (
@@ -218,7 +213,7 @@ export function ConnectRepoModal({ open, onClose, onConnected, connectedRepos = 
                         </div>
                     )}
 
-                    {!loading && filtered.map(repo => (
+                    {!loading && (filtered || []).map(repo => (
                         <RepoRow
                             key={repo.id ?? repo.fullName}
                             repo={repo}
@@ -230,7 +225,7 @@ export function ConnectRepoModal({ open, onClose, onConnected, connectedRepos = 
                 </div>
 
                 {/* Footer meta */}
-                {!loading && repos.length > 0 && (
+                {!loading && (repos || []).length > 0 && (
                     <div className="flex items-center justify-between text-xs text-gray-400 pt-1">
                         <span>{filtered.length} repo{filtered.length !== 1 ? 's' : ''}{query ? ' found' : ' available'}</span>
                         <button
