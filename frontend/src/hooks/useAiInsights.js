@@ -1,8 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // src/hooks/useAiInsights.js — FINAL, real API only
 // ═══════════════════════════════════════════════════════════════════════════════
+
 import { useState, useEffect, useCallback } from 'react'
-import { repoApi, runApi, aiApi }           from '@/api/client'
+import { repoApi, aiApi } from '@/api/client'
 
 export function useAiInsights(repoId) {
   const [insights, setInsights] = useState(null)
@@ -10,32 +11,31 @@ export function useAiInsights(repoId) {
   const [error,    setError]    = useState(null)
 
   const load = useCallback(async () => {
-    setLoading(true); setError(null)
+    setLoading(true)
+    setError(null)
     try {
       if (repoId) {
-        // Single repo — fetch /analyses endpoint directly
-        const res = await fetch(`/api/v1/repositories/${repoId}/analyses`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('piq_access_token')}` },
-        })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
+        // Single repo — use axios client so token refresh works
+        const res = await repoApi.analyses(repoId)
+        const data = res.data?.data ?? res.data
         setInsights(Array.isArray(data) ? data : [])
       } else {
-        // All repos — fetch analyses for each
+        // All repos — fetch list then analyses for each
         const reposRes = await repoApi.list()
-        const repos    = Array.isArray(reposRes.data)
-          ? reposRes.data
-          : reposRes.data?.content ?? []
+        const repoPayload = reposRes.data?.data ?? reposRes.data
+        const repos = Array.isArray(repoPayload)
+          ? repoPayload
+          : repoPayload?.content ?? []
 
-        if (!repos.length) { setInsights([]); return }
+        if (!repos.length) {
+          setInsights([])
+          return
+        }
 
         const settled = await Promise.allSettled(
           repos.slice(0, 5).map(async r => {
-            const res = await fetch(`/api/v1/repositories/${r.id}/analyses`, {
-              headers: { Authorization: `Bearer ${localStorage.getItem('piq_access_token')}` },
-            })
-            if (!res.ok) return []
-            const data = await res.json()
+            const res = await repoApi.analyses(r.id)
+            const data = res.data?.data ?? res.data ?? []
             return (Array.isArray(data) ? data : []).map(a => ({
               ...a,
               repoName: r.repoName,
@@ -51,7 +51,7 @@ export function useAiInsights(repoId) {
         setInsights(all)
       }
     } catch (e) {
-      setError(e.message ?? 'Failed to load AI insights')
+      setError(e.response?.data?.message ?? e.message ?? 'Failed to load AI insights')
     } finally {
       setLoading(false)
     }

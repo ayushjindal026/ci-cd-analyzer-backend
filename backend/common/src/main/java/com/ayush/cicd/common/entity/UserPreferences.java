@@ -2,8 +2,8 @@ package com.ayush.cicd.common.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-
 import java.time.Instant;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity
 @Table(name = "user_preferences")
@@ -19,6 +19,7 @@ public class UserPreferences {
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false, unique = true)
+    @JsonIgnore
     private User user;
 
     @Builder.Default

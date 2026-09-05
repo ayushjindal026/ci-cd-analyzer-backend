@@ -1,32 +1,38 @@
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // src/hooks/useRepositories.js — FINAL, real API only
 // ═══════════════════════════════════════════════════════════════════════════════
+
 import { useState, useEffect, useCallback } from 'react'
-import { repoApi }                          from '@/api/client'
+import { repoApi } from '@/api/client'
 
 export function useRepositories() {
   const [repos,   setRepos]   = useState([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(null)
 
-  const fetch = useCallback(() => {
-    setLoading(true); setError(null)
-    repoApi.list()
-      .then(r => {
-        const data = r.data
-        setRepos(Array.isArray(data) ? data : data?.content ?? [])
-      })
-      .catch(e => setError(e.response?.data?.message ?? 'Failed to load repositories'))
-      .finally(() => setLoading(false))
+  const fetch = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await repoApi.list()
+      // axios wraps response in res.data
+      // our ApiResponse wraps payload in res.data.data
+      const payload = res.data?.data ?? res.data
+      setRepos(Array.isArray(payload) ? payload : payload?.content ?? [])
+    } catch (e) {
+      setError(e.response?.data?.message ?? 'Failed to load repositories')
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => { fetch() }, [fetch])
 
   const addRepo = async (payload) => {
     const res = await repoApi.add(payload)
-    setRepos(prev => [...prev, res.data])
-    return res.data
+    const repo = res.data?.data ?? res.data
+    setRepos(prev => [...prev, repo])
+    return repo
   }
 
   const removeRepo = async (id) => {
@@ -36,8 +42,9 @@ export function useRepositories() {
 
   const syncRepo = async (id) => {
     const res = await repoApi.sync(id)
-    if (res?.data?.id) {
-      setRepos(prev => prev.map(r => r.id === id ? { ...r, ...res.data } : r))
+    const repo = res.data?.data ?? res.data
+    if (repo?.id) {
+      setRepos(prev => prev.map(r => r.id === id ? { ...r, ...repo } : r))
     } else {
       fetch()
     }

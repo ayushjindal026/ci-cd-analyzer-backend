@@ -109,7 +109,7 @@ api.interceptors.response.use(
     // ------------------------------------------------------------------------
 
     if (
-      error.response.status !== 401 ||
+      ![401, 403].includes(error.response.status) ||
       originalRequest._retry
     ) {
       return Promise.reject(error)
@@ -217,7 +217,7 @@ export const authApi = {
 
   refresh: refreshToken =>
     api.post('/auth/refresh', {
-      refreshToken,
+      refresh_token: refreshToken,
     }),
 
   logout: (body = {}) =>

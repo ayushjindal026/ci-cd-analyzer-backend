@@ -116,7 +116,7 @@ export async function tryRefresh() {
         const res = await axios.post(
             `${import.meta.env.VITE_API_URL}/api/v1/auth/refresh`,
             {
-                refreshToken,
+                refresh_token: refreshToken,
             },
             {
                 headers: {
@@ -129,8 +129,8 @@ export async function tryRefresh() {
         // backend returns camelCase
 
         tokenStorage.setBoth(
-            res.data.accessToken,
-            res.data.refreshToken
+            res.data.access_token ?? res.data.accessToken,
+            res.data.refresh_token ?? res.data.refreshToken
         )
 
         return true

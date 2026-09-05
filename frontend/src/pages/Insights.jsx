@@ -31,7 +31,7 @@ export default function Insights() {
     const { repos } = useRepositories()
     const { runs } = useRuns({})
 
-    const display = insights?.length ? insights : MOCK_INSIGHTS
+    const display = insights ?? []
     const critCount = display.filter(i => (i.severity ?? '').toLowerCase() === 'critical').length
     const score = insights?.length
         ? Math.max(10, Math.min(99, 100 - critCount * 18 - (display.length - critCount) * 6))

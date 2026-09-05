@@ -31,7 +31,7 @@ export function usePipelineSocket(repoId) {
     useEffect(() => {
         if (!repoId) return;
 
-        const token = localStorage.getItem('accessToken'); // adjust to your auth store
+        const token = localStorage.getItem('piq_access_token'); // adjust to your auth store
 
         const client = new Client({
             // SockJS factory — provides fallback for browsers without native WS
