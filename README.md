@@ -290,13 +290,28 @@ Invoke-RestMethod http://localhost:8000/health
 # 🚀 Start Backend
 
 ```bash
-cd backend
+Check Backend Logs
+docker logs -f pipelineiq-api
 
-mvn clean install
+Enter PostgreSQL
+docker exec -it pipelineiq-db psql -U pipelineiq -d pipelineiq
 
-cd api-service
+To Build Bakend: 
+docker compose up --build -d backend
 
-mvn spring-boot:run
+Normal workflow
+
+docker compose down
+docker compose up
+ngrok http 8081
+
+
+Emergency clean rebuild
+
+docker compose down -v
+docker system prune -a -f
+docker compose build --no-cache
+docker compose up
 ```
 
 Verify:
