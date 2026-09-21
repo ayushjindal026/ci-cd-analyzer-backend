@@ -37,10 +37,11 @@ public class SecurityConfig {
                                  * Disable globally for stateless JWT APIs
                                  * OR ignore only webhook + websocket endpoints
                                  */
-                                .csrf(csrf -> csrf.ignoringRequestMatchers(
-                                                "/stomp/**",
-                                                "/ws/**",
-                                                "/api/v1/webhook/**"))
+                                // .csrf(csrf -> csrf.ignoringRequestMatchers(
+                                //                 "/stomp/**",
+                                //                 "/ws/**",
+                                //                 "/api/v1/webhook/**"))
+                                .csrf(csrf -> csrf.disable())
 
                                 /*
                                  * CORS
@@ -51,7 +52,8 @@ public class SecurityConfig {
                                  * Stateless Session
                                  */
                                 .sessionManagement(session -> session
-                                                .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                                        .sessionFixation().none())
 
                                 /*
                                  * Authorization Rules

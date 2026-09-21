@@ -18,13 +18,48 @@ export function AddRepoModal({ open, onClose, onAdd }) {
 
     const handleAdd = async () => {
         if (!repoUrl.trim()) return
-        setAdding(true); setErr(null)
+        setAdding(true)
+        setErr(null)
         try {
-            await onAdd(repoUrl.trim())
-            reset(); onClose()
+            // Parse "owner/repo" or "https://github.com/owner/repo"
+            const raw = repoUrl.trim()
+            let owner, repoName
+
+            if (raw.includes('github.com')) {
+                const parts = raw.replace('https://github.com/', '').replace('http://github.com/', '').split('/')
+                owner = parts[0]
+                repoName = parts[1]
+            } else if (raw.includes('/')) {
+                const parts = raw.split('/')
+                owner = parts[0]
+                repoName = parts[1]
+            } else {
+                setErr('Enter in format: owner/repo or https://github.com/owner/repo')
+                return
+            }
+
+            if (!owner || !repoName) {
+                setErr('Could not parse repository name. Use format: owner/repo')
+                return
+            }
+
+            // Clean trailing slashes or .git
+            repoName = repoName.replace('.git', '').replace(/\/$/, '')
+
+            await onAdd({
+                owner,
+                repoName,
+                source: 'GITHUB_ACTIONS',
+                defaultBranch: 'main',
+            })
+
+            reset()
+            onClose()
         } catch (e) {
-            setErr(e.response?.data?.message ?? 'Could not add repository. Check the URL and try again.')
-        } finally { setAdding(false) }
+            setErr(e.response?.data?.message ?? e.response?.data?.error ?? 'Could not add repository. Check the URL and try again.')
+        } finally {
+            setAdding(false)
+        }
     }
 
     return (

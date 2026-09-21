@@ -35,7 +35,7 @@ export default function Insights() {
     const critCount = display.filter(i => (i.severity ?? '').toLowerCase() === 'critical').length
     const score = insights?.length
         ? Math.max(10, Math.min(99, 100 - critCount * 18 - (display.length - critCount) * 6))
-        : 100
+        : null
 
     return (
         <div className="space-y-6">

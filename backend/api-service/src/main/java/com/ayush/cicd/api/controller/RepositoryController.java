@@ -46,8 +46,6 @@ public class RepositoryController {
         public ResponseEntity<ApiResponse<List<RepositoryResponse>>> getRepositories(
                         @AuthenticationPrincipal User currentUser) {
 
-                System.out.println("CURRENT USER = " + currentUser);
-
                 List<RepositoryResponse> repositories = repositoryService.findAllActiveForUser(currentUser);
 
                 return ResponseEntity.ok(ApiResponse.success(repositories));

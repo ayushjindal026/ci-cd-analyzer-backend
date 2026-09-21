@@ -26,8 +26,6 @@ public class NotificationController {
             @AuthenticationPrincipal User user,
             @RequestParam(defaultValue = "20") int limit) {
 
-        System.out.println("NOTIFICATION USER = " + user);
-
         return notificationService
                 .getUserNotifications(user, limit);
     }

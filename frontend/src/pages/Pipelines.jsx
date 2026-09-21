@@ -1,6 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════════════════
-// src/pages/Pipelines.jsx  — now thin: delegates to component folder
-// ═══════════════════════════════════════════════════════════════════════════════
 import { useState } from 'react'
 import { Plus, RefreshCw } from 'lucide-react'
 import { useRepositories } from '@/hooks/useRepositories'
@@ -8,23 +5,24 @@ import { useToast } from '@/components/ui/Toast'
 import { ErrorBanner } from '@/components/ui'
 import { SummaryBar } from '@/components/pipelines/SummaryBar'
 import { RepoTable } from '@/components/pipelines/RepoTable'
-import { AddRepoModal } from '@/components/pipelines/AddRepoModal'
+import { ConnectRepoModal } from '@/components/pipelines/ConnectRepoModal'
 
 export default function Pipelines() {
     const { toast } = useToast()
-    const { repos, loading, error, refetch, addRepo, removeRepo, syncRepo } = useRepositories()
+    const { repos, loading, error, refetch, removeRepo, syncRepo } = useRepositories()
     const [showAdd, setShowAdd] = useState(false)
 
-    const handleAdd = async repoUrl => {
-        const repo = await addRepo({ repoUrl })
-        toast.success('Repository added', `${repo.fullName ?? repo.name} is now being tracked.`)
+    const handleConnected = () => {
+        setShowAdd(false)
+        refetch()
+        toast.success('Repository connected', 'Your repository is now being monitored.')
     }
 
     const handleSync = async id => {
         const repo = repos.find(r => r.id === id)
         try {
             await syncRepo(id)
-            toast.success('Synced', `${repo?.fullName ?? 'Repository'} synced successfully.`)
+            toast.success('Synced', `${repo?.repoName ?? 'Repository'} synced successfully.`)
         } catch {
             toast.error('Sync failed', 'Could not sync repository. Try again.')
         }
@@ -34,7 +32,7 @@ export default function Pipelines() {
         const repo = repos.find(r => r.id === id)
         try {
             await removeRepo(id)
-            toast.success('Removed', `${repo?.fullName ?? 'Repository'} disconnected.`)
+            toast.success('Removed', `${repo?.repoName ?? 'Repository'} disconnected.`)
         } catch {
             toast.error('Remove failed', 'Could not remove repository.')
         }
@@ -46,8 +44,13 @@ export default function Pipelines() {
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <p className="muted">Connect and monitor your GitHub CI/CD repositories.</p>
                 <div className="flex items-center gap-2">
-                    <button className="btn-secondary btn-sm" onClick={refetch} disabled={loading}>
-                        <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Refresh
+                    <button
+                        className="btn-secondary btn-sm"
+                        onClick={refetch}
+                        disabled={loading}
+                    >
+                        <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+                        Refresh
                     </button>
                     <button className="btn-primary" onClick={() => setShowAdd(true)}>
                         <Plus size={15} /> Add Repository
@@ -66,10 +69,11 @@ export default function Pipelines() {
                 onAddClick={() => setShowAdd(true)}
             />
 
-            <AddRepoModal
+            <ConnectRepoModal
                 open={showAdd}
                 onClose={() => setShowAdd(false)}
-                onAdd={handleAdd}
+                onConnected={handleConnected}
+                connectedRepos={repos}
             />
         </div>
     )

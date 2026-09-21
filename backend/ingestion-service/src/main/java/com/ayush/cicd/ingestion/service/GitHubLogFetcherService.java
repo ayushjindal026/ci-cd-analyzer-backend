@@ -14,7 +14,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
-
+import com.ayush.cicd.common.enums.AnalysisStatus;
 import java.io.*;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -56,7 +56,7 @@ public class GitHubLogFetcherService {
         PipelineRun run = runRepo.findById(runId)
                 .orElseThrow(() -> new IllegalArgumentException("Run not found: " + runId));
 
-        MonitoredRepository repo = repoRepo.findById(repositoryId)
+        MonitoredRepository repo = repoRepo.findByIdWithUser(repositoryId)
                 .orElseThrow(() -> new IllegalArgumentException("Repo not found: " + repositoryId));
 
         if (run.getExternalRunId() == null) {
@@ -75,7 +75,17 @@ public class GitHubLogFetcherService {
 
         Map<String, String> stageLogs = fetchLogs(repo, githubRunId);
         if (stageLogs.isEmpty()) {
-            log.warn("No logs retrieved for run {} (githubRunId={})", runId, githubRunId);
+
+            log.warn(
+                    "No logs retrieved for run {} (githubRunId={}). " +
+                    "Marking analysis as LOGS_UNAVAILABLE.",
+                    runId,
+                    githubRunId
+            );
+
+            run.setAnalysisStatus(AnalysisStatus.LOGS_UNAVAILABLE);
+            runRepo.save(run);
+
             return;
         }
 
@@ -136,11 +146,29 @@ public class GitHubLogFetcherService {
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
                 return unzipLogs(response.getBody());
             }
+        } catch (HttpClientErrorException.Gone e) {
+
+            log.warn(
+                    "GitHub logs are no longer available for githubRunId={} " +
+                    "(logs may have expired or been deleted).",
+                    githubRunId
+            );
 
         } catch (HttpClientErrorException.NotFound e) {
-            log.warn("Logs not found for githubRunId {} (run may be too old or deleted)", githubRunId);
+
+            log.warn(
+                    "GitHub logs not found for githubRunId={} " +
+                    "(run may have been deleted or is unavailable).",
+                    githubRunId
+            );
+
         } catch (HttpClientErrorException.Forbidden e) {
-            log.warn("Access denied fetching logs for {} — check token scopes", githubRunId);
+
+            log.warn(
+                    "Access denied fetching logs for githubRunId={} " +
+                    "— check GitHub Actions read permissions.",
+                    githubRunId
+            );
         } catch (Exception e) {
             log.error("Log fetch error for githubRunId {}: {}", githubRunId, e.getMessage());
         }

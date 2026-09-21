@@ -128,13 +128,16 @@ export function RunsTable({ repositoryId, statusFilter = 'all', compact = false 
                 ...(statusFilter !== 'all' && { status: statusFilter }),
             }
             const res = await runApi.repoRuns(repositoryId, params)
-            const data = res.data
+
+            const payload = res.data?.data ?? res.data
 
             // Handles both PagedResponse and plain array
-            if (Array.isArray(data)) {
-                setRuns(data); setTotal(data.length)
+            if (Array.isArray(payload)) {
+                setRuns(payload)
+                setTotal(payload.length)
             } else {
-                setRuns(data.content ?? []); setTotal(data.totalElements ?? 0)
+                setRuns(payload?.content ?? [])
+                setTotal(payload?.totalElements ?? 0)
             }
         } catch (e) {
             setError(e.response?.data?.message ?? 'Failed to load pipeline runs.')

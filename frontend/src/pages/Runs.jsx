@@ -218,7 +218,7 @@ export default function Runs() {
             {/* Slide-in drawer — replaces modal */}
             <RunDetailDrawer
                 run={selected}
-                repositoryId={selected?.repositoryId ?? selected?.repositoryId}
+                repositoryId={selRepo || selected?.repositoryId}
                 open={selected !== null}
                 onClose={() => setSelected(null)}
             />

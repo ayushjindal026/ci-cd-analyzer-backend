@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Spinner, FullPageSpinner } from '@/components/ui/Spinner'
 import { ErrorBanner } from '@/components/ui'
 import { FailureRateChart } from '@/components/charts/FailureRateChart'
+import { usePipelineSocket } from '@/hooks/usePipelineSocket'
 import { StageDurationChart } from '@/components/charts/StageDurationChart'
 import { SuccessRatioChart } from '@/components/charts/SuccessRatioChart'
 import { RunsTable } from '@/components/runs/RunsTable'
@@ -140,67 +141,191 @@ function OverviewTab({ metrics, repo }) {
 }
 
 // ── AI Insights tab ───────────────────────────────────────────────────────────
-function AiInsightsTab({ repoId, analyses, loadingA }) {
+function AiInsightsTab({ repoId, analyses, loadingA, onAnalysisComplete }) {
   const { toast } = useToast()
   const [triggering, setTriggering] = useState(false)
+  const [analysingRunId, setAnalysingRunId] = useState(null)
+
+  const stopPolling = useCallback(() => {
+    setAnalysingRunId(null)
+  }, [])
+
+  useEffect(() => {
+    if (!analysingRunId) return
+
+    const startedAt = Date.now()
+    const POLL_INTERVAL = 5000
+    const TIMEOUT = 90000
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await repoApi.analyses(repoId)
+        const payload = res.data?.data ?? res.data
+
+        const currentAnalyses = Array.isArray(payload)
+          ? payload
+          : []
+
+        const completed = currentAnalyses.some(a => {
+          const analysisRunId = a.pipelineRunId ?? a.runId
+          return Number(analysisRunId) === Number(analysingRunId)
+        })
+
+        if (completed) {
+          clearInterval(interval)
+          setAnalysingRunId(null)
+
+          await onAnalysisComplete?.()
+
+          toast.success(
+            'AI analysis ready',
+            'The failure diagnosis is now available.'
+          )
+
+          return
+        }
+
+        if (Date.now() - startedAt >= TIMEOUT) {
+          clearInterval(interval)
+          setAnalysingRunId(null)
+
+          toast.info(
+            'Analysis still processing',
+            'The AI analysis is taking longer than expected. Results will appear automatically when ready.'
+          )
+        }
+      } catch (e) {
+        console.error('Failed to poll AI analysis:', e)
+      }
+    }, POLL_INTERVAL)
+
+    return () => clearInterval(interval)
+  }, [repoId, analysingRunId, onAnalysisComplete, toast])
 
   const handleTriggerLatest = async () => {
     setTriggering(true)
+
     try {
-      // Fetch latest failed run and trigger analysis
       const res = await runApi.repoRuns(repoId, { size: 10 })
-      const runs =
-        res.data?.data?.content ??
-        res.data?.content ??
-        []
-      const fail = runs.find(r => ['FAILED', 'failed'].includes(r.status))
-      if (!fail) { toast.info('No failed runs', 'Nothing to analyse right now.'); return }
-      await aiApi.trigger(repoId, fail.id)
-      toast.success('AI analysis queued', 'Results will appear here in ~30 seconds.')
+      const payload = res.data?.data ?? res.data
+
+      const runs = Array.isArray(payload)
+        ? payload
+        : payload?.content ?? []
+
+      const failedRun = runs.find(run =>
+        ['FAILED', 'failed', 'FAILURE', 'failure'].includes(run.status)
+      )
+
+      if (!failedRun) {
+        toast.info(
+          'No failed runs',
+          'There is no failed pipeline run available to analyse.'
+        )
+        return
+      }
+
+      await aiApi.trigger(repoId, failedRun.id)
+
+      setAnalysingRunId(failedRun.id)
+
+      toast.success(
+        'AI analysis queued',
+        'Analysis is running. We will update this page when the result is ready.'
+      )
     } catch (e) {
-      toast.error('Failed', e.response?.data?.message ?? 'Could not trigger analysis.')
-    } finally { setTriggering(false) }
+      toast.error(
+        'Failed',
+        e.response?.data?.message ?? 'Could not trigger analysis.'
+      )
+    } finally {
+      setTriggering(false)
+    }
   }
 
   if (loadingA) {
-    return <div className="flex justify-center py-20"><Spinner size="lg" /></div>
+    return (
+      <div className="flex justify-center py-20">
+        <Spinner size="lg" />
+      </div>
+    )
   }
 
   return (
     <div className="space-y-4">
+
       <div className="flex items-center justify-between">
-        <p className="muted">AI-generated diagnoses from failed pipeline runs.</p>
-        <button className="btn-primary btn-sm" onClick={handleTriggerLatest} disabled={triggering}>
-          {triggering ? <><Spinner size="sm" /> Queuing…</> : <><Zap size={13} /> Analyse Latest Failure</>}
+        <div>
+          <p className="muted">
+            AI-generated diagnoses from failed pipeline runs.
+          </p>
+
+          {analysingRunId && (
+            <p className="text-xs text-brand-500 mt-1">
+              Analysing run #{analysingRunId}…
+            </p>
+          )}
+        </div>
+
+        <button
+          className="btn-primary btn-sm"
+          onClick={handleTriggerLatest}
+          disabled={triggering || analysingRunId !== null}
+        >
+          {triggering ? (
+            <>
+              <Spinner size="sm" /> Queuing…
+            </>
+          ) : analysingRunId ? (
+            <>
+              <Spinner size="sm" /> Analysing…
+            </>
+          ) : (
+            <>
+              <Zap size={13} /> Analyse Latest Failure
+            </>
+          )}
         </button>
       </div>
 
-      {analyses.length === 0 && (
+      {analyses.length === 0 && !analysingRunId && (
         <div className="card p-12 text-center">
-          <Sparkles size={36} className="text-gray-300 dark:text-gray-700 mx-auto mb-3" />
-          <p className="font-medium text-gray-700 dark:text-gray-300">No analyses yet</p>
-          <p className="muted text-xs mt-1">Click "Analyse Latest Failure" to generate the first AI diagnosis.</p>
+          <Sparkles
+            size={36}
+            className="text-gray-300 dark:text-gray-700 mx-auto mb-3"
+          />
+
+          <p className="font-medium text-gray-700 dark:text-gray-300">
+            No analyses yet
+          </p>
+
+          <p className="muted text-xs mt-1">
+            Click "Analyse Latest Failure" to generate the first AI diagnosis.
+          </p>
         </div>
       )}
 
       {analyses.map((a, i) => (
-        <InsightCard key={a.id ?? i} insight={{
-          severity: (a.severity ?? 'info').toLowerCase(),
-          stage: a.stage,
-          title: a.summary ?? `Run #${a.runId} analysis`,
-          summary: a.rootCause,
-          detail: a.diagnosis,
-          recommendation: a.recommendation,
-          remediationSteps: a.remediationSteps
-            ? a.remediationSteps.split('\n').filter(Boolean)
-            : [],
-          isFlaky: a.isFlaky,
-          flakinessScore: a.flakinessScore,
-          estimatedFixTime: a.estimatedFixTime,
-          priority: a.priority,
-          modelUsed: a.modelUsed,
-          analysedAt: a.analysedAt,
-        }} />
+        <InsightCard
+          key={a.id ?? i}
+          insight={{
+            severity: (a.severity ?? 'info').toLowerCase(),
+            stage: a.stage,
+            title: a.summary ?? `Run #${a.pipelineRunId ?? a.runId} analysis`,
+            summary: a.rootCauseSummary ?? a.rootCause,
+            detail: a.diagnosis,
+            recommendation: a.recommendation ?? a.suggestedFix,
+            remediationSteps: a.remediationSteps
+              ? a.remediationSteps.split('\n').filter(Boolean)
+              : [],
+            isFlaky: a.isFlaky,
+            flakinessScore: a.flakinessScore,
+            estimatedFixTime: a.estimatedFixTime,
+            priority: a.priority,
+            modelUsed: a.modelUsed ?? a.analysedByModel,
+            analysedAt: a.analysedAt,
+          }}
+        />
       ))}
     </div>
   )
@@ -276,6 +401,11 @@ export default function RepositoryDetails() {
   const { toast } = useToast()
   const repoId = Number(id)
 
+  const {
+  connected: wsConnected,
+  lastEvent,
+  } = usePipelineSocket(repoId)
+
   const [repo, setRepo] = useState(null)
   const [metrics, setMetrics] = useState(null)
   const [analyses, setAnalyses] = useState([])
@@ -322,6 +452,17 @@ export default function RepositoryDetails() {
     fetchCore()
     fetchAnalyses()
   }, [fetchCore, fetchAnalyses])
+
+  useEffect(() => {
+    if (lastEvent?.type !== 'ANALYSIS_READY') return
+
+    fetchAnalyses()
+
+    toast.success(
+      'AI analysis ready',
+      'The pipeline failure has been analysed successfully.'
+    )
+  }, [lastEvent, fetchAnalyses, toast])
 
   // Poll metrics every 30s (60s if no live runs)
   usePolling(fetchCore, 30_000)
@@ -387,9 +528,12 @@ export default function RepositoryDetails() {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-          <Link to="/insights" className="btn-secondary btn-sm">
-            <Sparkles size={13} /> AI Insights
-          </Link>
+          <button
+              className="btn-secondary btn-sm"
+              onClick={() => setTab('AI Insights')}
+          >
+              <Sparkles size={13} /> AI Insights
+          </button>
           <button
             className="btn-primary btn-sm"
             onClick={handleSync}
@@ -432,8 +576,8 @@ export default function RepositoryDetails() {
       {/* Tab content */}
       <div className="animate-fade-in">
         {tab === 'Overview' && <OverviewTab metrics={metrics} repo={repo} />}
-        {tab === 'Runs' && <RunsTable repoId={repoId} />}
-        {tab === 'AI Insights' && <AiInsightsTab repoId={repoId} analyses={analyses} loadingA={loadingA} />}
+        {tab === 'Runs' && <RunsTable repositoryId={repoId} />}
+        {tab === 'AI Insights' && <AiInsightsTab repoId={repoId} analyses={analyses} loadingA={loadingA} onAnalysisComplete={fetchAnalyses} />}
         {tab === 'Flaky Tests' && <FlakyTestsTab flakyAnalyses={flakyAnalyses} />}
       </div>
     </div>

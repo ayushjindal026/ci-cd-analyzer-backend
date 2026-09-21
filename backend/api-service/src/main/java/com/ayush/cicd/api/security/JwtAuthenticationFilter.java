@@ -70,122 +70,69 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String requestPath = request.getServletPath();
 
-        // --------------------------------------------------------------------
-        // Skip OAuth/Auth endpoints
-        // --------------------------------------------------------------------
-
-        if (requestPath.startsWith("/api/v1/auth") ||
+        boolean publicEndpoint =
+                requestPath.equals("/api/v1/auth/github/login") ||
+                requestPath.equals("/api/v1/auth/github/callback") ||
+                requestPath.equals("/api/v1/auth/refresh") ||
                 requestPath.startsWith("/oauth2") ||
                 requestPath.startsWith("/login/oauth2") ||
                 requestPath.startsWith("/swagger-ui") ||
                 requestPath.startsWith("/v3/api-docs") ||
-                requestPath.startsWith("/actuator")) {
+                requestPath.startsWith("/actuator");
 
+        if (publicEndpoint) {
             filterChain.doFilter(request, response);
-
             return;
         }
-        // --------------------------------------------------------------------
-        // Extract Bearer token
-        // --------------------------------------------------------------------
 
         String token = extractToken(request);
 
-        // No token present
         if (!StringUtils.hasText(token)) {
-
-            System.out.println("NO JWT TOKEN FOUND");
-
+            log.debug("No JWT token for request: {}", request.getRequestURI());
             filterChain.doFilter(request, response);
-
             return;
         }
 
-        System.out.println("JWT TOKEN: " + token);
-
         try {
 
-            // ----------------------------------------------------------------
-            // Validate token
-            // ----------------------------------------------------------------
-
             if (!jwtService.isTokenValid(token)) {
-
-                System.out.println("JWT TOKEN INVALID");
-
-                log.debug(
-                        "Invalid JWT token for request: {}",
-                        request.getRequestURI());
-
+                log.debug("Invalid JWT token for request: {}", request.getRequestURI());
                 SecurityContextHolder.clearContext();
-
                 filterChain.doFilter(request, response);
-
                 return;
             }
 
-            System.out.println("JWT TOKEN VALID");
-
-            // ----------------------------------------------------------------
-            // Avoid re-authentication
-            // ----------------------------------------------------------------
-
-            if (SecurityContextHolder
-                    .getContext()
-                    .getAuthentication() == null) {
+            if (SecurityContextHolder.getContext().getAuthentication() == null) {
 
                 Long userId = jwtService.getUserId(token);
 
-                System.out.println("USER ID FROM JWT: " + userId);
-
-                User user = userRepository.findById(userId)
-                        .orElse(null);
+                User user = userRepository.findById(userId).orElse(null);
 
                 if (user != null) {
 
-                    System.out.println("AUTHENTICATED USER: " + user.getUsername());
-
-                    UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                            user,
-                            null,
-                            List.of(
-                                    new SimpleGrantedAuthority(
-                                            "ROLE_USER")));
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(
+                                    user,
+                                    null,
+                                    List.of(new SimpleGrantedAuthority("ROLE_USER")));
 
                     authentication.setDetails(
-                            new WebAuthenticationDetailsSource()
-                                    .buildDetails(request));
+                            new WebAuthenticationDetailsSource().buildDetails(request));
 
-                    SecurityContextHolder
-                            .getContext()
-                            .setAuthentication(authentication);
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
 
-                    log.debug(
-                            "Authenticated user={} path={}",
-                            user.getUsername(),
-                            request.getRequestURI());
+                    log.debug("Authenticated user={} path={}",
+                            user.getUsername(), request.getRequestURI());
 
                 } else {
-
-                    System.out.println("USER NOT FOUND IN DATABASE");
-
-                    log.debug(
-                            "JWT valid but user not found. userId={}",
-                            userId);
-
+                    log.debug("JWT valid but user not found. userId={}", userId);
                     SecurityContextHolder.clearContext();
                 }
             }
 
         } catch (Exception e) {
-
-            System.out.println("JWT AUTH ERROR:");
-            e.printStackTrace();
-
-            log.error(
-                    "JWT authentication failed: {}",
-                    e.getMessage());
-
+            log.error("JWT authentication failed for request {}: {}",
+                    request.getRequestURI(), e.getMessage());
             SecurityContextHolder.clearContext();
         }
 

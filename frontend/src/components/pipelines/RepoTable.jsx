@@ -101,14 +101,22 @@ export function RepoTable({ repos, loading, onSync, onRemove, onAddClick }) {
                                     <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
                                         <GitBranch size={14} className="text-brand-500" />
                                     </div>
+
                                     <div className="min-w-0">
-                                        <p className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate max-w-[180px]">
-                                            {repo.fullName ?? repo.name}
-                                        </p>
-                                        <a href={`https://github.com/${repo.fullName ?? repo.name}`}
-                                            target="_blank" rel="noreferrer"
+                                        <Link
+                                            to={`/repos/${repo.id}`}
+                                            className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate max-w-[180px] hover:text-brand-500 dark:hover:text-brand-400 transition-colors"
+                                        >
+                                            {repo.fullName ?? `${repo.owner}/${repo.repoName}`}
+                                        </Link>
+
+                                        <a
+                                            href={`https://github.com/${repo.owner}/${repo.repoName}`}
+                                            target="_blank"
+                                            rel="noreferrer"
                                             onClick={e => e.stopPropagation()}
-                                            className="text-xs text-brand-500 hover:underline flex items-center gap-0.5">
+                                            className="text-xs text-brand-500 hover:underline flex items-center gap-0.5"
+                                        >
                                             GitHub <ArrowUpRight size={10} />
                                         </a>
                                     </div>

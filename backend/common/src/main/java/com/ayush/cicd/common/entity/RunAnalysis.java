@@ -23,7 +23,7 @@ import java.time.Instant;
 @Entity
 @Table(name = "run_analysis", indexes = {
 
-        @Index(name = "idx_ra_run", columnList = "run_id"),
+        @Index(name = "idx_ra_run", columnList = "pipeline_run_id"),
         @Index(name = "idx_ra_repo", columnList = "repository_id"),
         @Index(name = "idx_ra_failure_category", columnList = "failure_category"),
         @Index(name = "idx_ra_severity", columnList = "severity"),
@@ -44,7 +44,7 @@ public class RunAnalysis {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "run_id", nullable = false, unique = true)
+    @Column(name = "pipeline_run_id", nullable = false, unique = true)
     private Long runId;
 
     @Column(name = "repository_id", nullable = false)

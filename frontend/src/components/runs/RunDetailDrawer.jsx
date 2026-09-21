@@ -86,23 +86,56 @@ function CopyButton({ text }) {
 }
 
 // ── AI analysis panel ─────────────────────────────────────────────────────────
-function AnalysisPanel({ analysis, onTrigger, triggering, triggered, demoMode }) {
+
+function AnalysisPanel({
+    analysis,
+    onTrigger,
+    triggering,
+    triggered,
+    demoMode,
+    runStatus,
+}) {
+    const isFailed = ['failed', 'failure'].includes(
+        String(runStatus ?? '').toLowerCase()
+    )
+
+    // No analysis exists yet
     if (!analysis && !demoMode) {
         return (
             <div className="space-y-2">
-                <p className="text-xs text-gray-400">No AI analysis yet for this run.</p>
-                <button
-                    className="btn-primary btn-sm"
-                    onClick={onTrigger}
-                    disabled={triggering || triggered}
-                >
-                    {triggering ? <><Spinner size="sm" /> Analysing…</> :
-                        triggered ? '✓ Analysis queued' :
-                            <><Zap size={13} /> Run AI Diagnosis</>}
-                </button>
-                {triggered && (
+                <p className="text-xs text-gray-400">
+                    No AI analysis yet for this run.
+                </p>
+
+                {isFailed ? (
+                    <>
+                        <button
+                            className="btn-primary btn-sm"
+                            onClick={onTrigger}
+                            disabled={triggering || triggered}
+                        >
+                            {triggering ? (
+                                <>
+                                    <Spinner size="sm" /> Analysing…
+                                </>
+                            ) : triggered ? (
+                                '✓ Analysis queued'
+                            ) : (
+                                <>
+                                    <Zap size={13} /> Run AI Diagnosis
+                                </>
+                            )}
+                        </button>
+
+                        {triggered && (
+                            <p className="text-xs text-gray-400">
+                                Results will appear when analysis completes.
+                            </p>
+                        )}
+                    </>
+                ) : (
                     <p className="text-xs text-gray-400">
-                        Results appear in the Insights page within ~30 seconds.
+                        AI diagnosis is available only for failed pipeline runs.
                     </p>
                 )}
             </div>
@@ -216,7 +249,7 @@ export function RunDetailDrawer({ run: baseRun, repositoryId, open, onClose, dem
     // Fetch analysis when drawer opens (real mode only)
     useEffect(() => {
         if (!open || !baseRun || demoMode) return
-        const rid = repositoryId ?? baseRun.repositoryId ?? baseRun.repositoryId
+        const rid = repositoryId ?? baseRun.repositoryId
         const runId = baseRun.id
         if (!rid || !runId) return
 
@@ -225,7 +258,7 @@ export function RunDetailDrawer({ run: baseRun, repositoryId, open, onClose, dem
             .then(res => setAnalysis(res.data))
             .catch(() => setAnalysis(null))
             .finally(() => setLoadingA(false))
-    }, [open, baseRun?.id])  // eslint-disable-line
+    }, [open, baseRun?.id, repositoryId])
 
     // Demo mode: find pre-computed analysis from demo data
     useEffect(() => {
@@ -248,15 +281,52 @@ export function RunDetailDrawer({ run: baseRun, repositoryId, open, onClose, dem
 
     const handleTrigger = async () => {
         if (!baseRun || demoMode) return
-        const rid = repositoryId ?? baseRun.repositoryId ?? baseRun.repositoryId
+
+        const isFailed = ['failed', 'failure'].includes(
+            String(baseRun.status ?? '').toLowerCase()
+        )
+
+        if (!isFailed) {
+            toast?.info(
+                'Analysis not available',
+                'AI diagnosis is only available for failed pipeline runs.'
+            )
+            return
+        }
+
+        const rid = repositoryId ?? baseRun.repositoryId
+
+        if (!rid) {
+            toast?.error(
+                'Analysis failed',
+                'Repository ID is missing for this run.'
+            )
+            return
+        }
+
         setTriggering(true)
+
         try {
             await runApi.analyse(rid, baseRun.id)
+
             setTriggered(true)
-            toast?.success('AI analysis queued', 'Results appear in ~30 seconds.')
+
+            toast?.success(
+                'AI analysis queued',
+                'Results will appear when analysis completes.'
+            )
         } catch (e) {
-            toast?.error('Analysis failed', e.response?.data?.message ?? 'Try again.')
-        } finally { setTriggering(false) }
+            console.error('AI analysis failed:', e)
+
+            toast?.error(
+                'Analysis failed',
+                e.response?.data?.message ??
+                e.message ??
+                'Unexpected error occurred. Please try again.'
+            )
+        } finally {
+            setTriggering(false)
+        }
     }
 
     const isFailed = ['failed', 'failure', 'FAILED', 'FAILURE'].includes(baseRun?.status ?? '')
@@ -275,12 +345,12 @@ export function RunDetailDrawer({ run: baseRun, repositoryId, open, onClose, dem
             <aside
                 ref={drawerRef}
                 className={`
-          fixed inset-y-0 right-0 z-50 w-full max-w-xl
-          bg-white dark:bg-gray-900
-          border-l border-gray-200 dark:border-gray-800
-          shadow-2xl flex flex-col
-          transition-transform duration-300 ease-out
-          ${open ? 'translate-x-0' : 'translate-x-full'}
+                fixed inset-y-0 right-0 z-50 w-full max-w-xl
+                bg-white dark:bg-gray-900
+                border-l border-gray-200 dark:border-gray-800
+                shadow-2xl flex flex-col
+                transition-transform duration-300 ease-out
+                ${open ? 'translate-x-0' : 'translate-x-full'}
         `}
             >
                 {/* Header */}
@@ -374,6 +444,7 @@ export function RunDetailDrawer({ run: baseRun, repositoryId, open, onClose, dem
                                     triggering={triggering}
                                     triggered={triggered}
                                     demoMode={demoMode}
+                                    runStatus={baseRun?.status}
                                 />
                             </section>
 

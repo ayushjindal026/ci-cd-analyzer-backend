@@ -1,99 +1,94 @@
 import axios from 'axios'
-import { tokenStorage, tryRefresh } from '@/context/AuthContext'
+
+import {
+  tokenStorage,
+  tryRefresh,
+} from '@/context/AuthContext'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API Base URL
+// ─────────────────────────────────────────────────────────────────────────────
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || ''
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Axios Instance
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL ||
-  'http://localhost:8081'
-
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
+
   timeout: 20000,
+
   headers: {
     'Content-Type': 'application/json',
   },
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Global Refresh / Redirect State
-// ─────────────────────────────────────────────────────────────────────────────
-
-let isRefreshing = false
-
-let failedQueue = []
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Queue Processor
-// ─────────────────────────────────────────────────────────────────────────────
-
-const processQueue = error => {
-
-  failedQueue.forEach(promise => {
-
-    if (error) {
-      promise.reject(error)
-    } else {
-      promise.resolve()
-    }
-  })
-
-  failedQueue = []
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Inject JWT Access Token
+// Request Interceptor
+//
+// Automatically attaches the latest access token.
+//
+// This is important after refresh because tokenStorage now contains
+// the newly rotated access token.
 // ─────────────────────────────────────────────────────────────────────────────
 
 api.interceptors.request.use(
-
   config => {
-
-    const token = tokenStorage.getAccess()
+    const token =
+      tokenStorage.getAccess()
 
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+      config.headers.Authorization =
+        `Bearer ${token}`
     }
 
     return config
   },
 
-  error => Promise.reject(error)
+  error =>
+    Promise.reject(error)
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Response Interceptor
-// Handles:
-// - 401 refresh flow
-// - request queueing
-// - retry prevention
-// - redirect storm prevention
+//
+// Responsibilities:
+//
+//   1. Detect 401 / 403.
+//   2. Ask the shared tryRefresh() function to refresh the session.
+//   3. Wait if another refresh is already running.
+//   4. Retry the original request once.
+//   5. Never intercept authentication endpoints.
 // ─────────────────────────────────────────────────────────────────────────────
 
 api.interceptors.response.use(
-
   response => response,
 
   async error => {
+    const originalRequest =
+      error.config
 
-    const originalRequest = error.config
-
-    // ------------------------------------------------------------------------
-    // No response (network/server down)
-    // ------------------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────────
+    // No HTTP response.
+    //
+    // Usually a network error, CORS error, connection failure, etc.
+    // ─────────────────────────────────────────────────────────────────────────
 
     if (!error.response) {
       return Promise.reject(error)
     }
 
-    const requestUrl = originalRequest?.url || ''
+    const requestUrl =
+      originalRequest?.url || ''
 
-    // ------------------------------------------------------------------------
-    // Never intercept auth endpoints
-    // Prevent infinite refresh recursion
-    // ------------------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────────
+    // Never intercept authentication endpoints.
+    //
+    // In particular, /auth/refresh must NEVER trigger another refresh.
+    // ─────────────────────────────────────────────────────────────────────────
 
     if (
       requestUrl.includes('/auth/login') ||
@@ -104,104 +99,94 @@ api.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    // ------------------------------------------------------------------------
-    // Only handle 401 once
-    // ------------------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────────
+    // Only handle authentication failures.
+    //
+    // _retry prevents infinite retry loops.
+    // ─────────────────────────────────────────────────────────────────────────
 
     if (
-      ![401, 403].includes(error.response.status) ||
-      originalRequest._retry
+      ![401, 403].includes(
+        error.response.status
+      ) ||
+      originalRequest?._retry
     ) {
       return Promise.reject(error)
     }
 
-    // ------------------------------------------------------------------------
-    // Queue requests during token refresh
-    // ------------------------------------------------------------------------
-
-    if (isRefreshing) {
-
-      return new Promise((resolve, reject) => {
-
-        failedQueue.push({
-          resolve,
-          reject,
-        })
-
-      }).then(() => {
-
-        originalRequest.headers.Authorization =
-          `Bearer ${tokenStorage.getAccess()}`
-
-        return api(originalRequest)
-
-      }).catch(err => Promise.reject(err))
-    }
-
-    // ------------------------------------------------------------------------
-    // Begin refresh flow
-    // ------------------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────────
+    // Mark this request as retried BEFORE refreshing.
+    //
+    // This guarantees that if the retry itself receives 401/403,
+    // it will not start another refresh cycle.
+    // ─────────────────────────────────────────────────────────────────────────
 
     originalRequest._retry = true
 
-    isRefreshing = true
+    // ─────────────────────────────────────────────────────────────────────────
+    // Make sure a refresh token actually exists.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const refreshToken =
+      tokenStorage.getRefresh()
+
+    if (!refreshToken) {
+      tokenStorage.clear()
+
+      return Promise.reject(error)
+    }
 
     try {
+      // ───────────────────────────────────────────────────────────────────────
+      // IMPORTANT:
+      //
+      // tryRefresh() has a shared promise.
+      //
+      // Therefore if multiple requests receive 401/403 at approximately
+      // the same time, they all wait for ONE refresh operation.
+      // ───────────────────────────────────────────────────────────────────────
 
-      // ----------------------------------------------------------------------
-      // Ensure refresh token exists
-      // ----------------------------------------------------------------------
+      const refreshed =
+        await tryRefresh()
 
-      const refreshToken = tokenStorage.getRefresh()
-
-      if (!refreshToken) {
-
+      if (!refreshed) {
         tokenStorage.clear()
 
         return Promise.reject(error)
       }
 
-      // ----------------------------------------------------------------------
-      // Refresh access token
-      // ----------------------------------------------------------------------
+      // ───────────────────────────────────────────────────────────────────────
+      // Refresh succeeded.
+      //
+      // Get the NEW access token from storage.
+      // ───────────────────────────────────────────────────────────────────────
 
-      const refreshed = await tryRefresh()
+      const newAccessToken =
+        tokenStorage.getAccess()
 
-      isRefreshing = false
+      if (!newAccessToken) {
+        tokenStorage.clear()
 
-      // ----------------------------------------------------------------------
-      // Refresh successful
-      // ----------------------------------------------------------------------
-
-      if (refreshed) {
-
-        processQueue(null)
-
-        originalRequest.headers.Authorization =
-          `Bearer ${tokenStorage.getAccess()}`
-
-        return api(originalRequest)
+        return Promise.reject(error)
       }
 
-      // ----------------------------------------------------------------------
-      // Refresh failed
-      // ----------------------------------------------------------------------
+      originalRequest.headers =
+        originalRequest.headers || {}
 
-      processQueue(new Error('Session expired'))
+      originalRequest.headers.Authorization =
+        `Bearer ${newAccessToken}`
 
-      tokenStorage.clear()
+      // ───────────────────────────────────────────────────────────────────────
+      // Retry the original request exactly once.
+      // ───────────────────────────────────────────────────────────────────────
 
-      return Promise.reject(error)
-
+      return api(originalRequest)
     } catch (refreshError) {
-
-      isRefreshing = false
-
-      processQueue(refreshError)
-
       tokenStorage.clear()
 
-      return Promise.reject(error)
+      return Promise.reject(
+        refreshError
+      )
     }
   }
 )
@@ -211,22 +196,30 @@ api.interceptors.response.use(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const authApi = {
-
   me: () =>
     api.get('/auth/me'),
 
   refresh: refreshToken =>
-    api.post('/auth/refresh', {
-      refresh_token: refreshToken,
-    }),
+    api.post(
+      '/auth/refresh',
+      {
+        refresh_token: refreshToken,
+      }
+    ),
 
   logout: (body = {}) =>
-    api.post('/auth/logout', body),
+    api.post(
+      '/auth/logout',
+      body
+    ),
 
   logoutAll: () =>
-    api.post('/auth/logout', {
-      logoutAll: true,
-    }),
+    api.post(
+      '/auth/logout',
+      {
+        logoutAll: true,
+      }
+    ),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -234,32 +227,47 @@ export const authApi = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const repoApi = {
-
   list: () =>
     api.get('/repositories'),
 
   get: id =>
-    api.get(`/repositories/${id}`),
+    api.get(
+      `/repositories/${id}`
+    ),
 
   add: data =>
-    api.post('/repositories', data),
+    api.post(
+      '/repositories',
+      data
+    ),
 
   remove: id =>
-    api.delete(`/repositories/${id}`),
+    api.delete(
+      `/repositories/${id}`
+    ),
 
   sync: id =>
-    api.post(`/repositories/${id}/sync`),
+    api.post(
+      `/repositories/${id}/sync`
+    ),
 
   runs: (id, params) =>
-    api.get(`/repositories/${id}/runs`, {
-      params,
-    }),
+    api.get(
+      `/repositories/${id}/runs`,
+      {
+        params,
+      }
+    ),
 
   metrics: id =>
-    api.get(`/repositories/${id}/metrics`),
+    api.get(
+      `/repositories/${id}/metrics`
+    ),
 
   analyses: id =>
-    api.get(`/repositories/${id}/analyses`)
+    api.get(
+      `/repositories/${id}/analyses`
+    ),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -267,18 +275,23 @@ export const repoApi = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const githubApi = {
-
   listUserRepos: (params = {}) =>
-    api.get('/github/repos', {
-      params,
-    }),
+    api.get(
+      '/github/repos',
+      {
+        params,
+      }
+    ),
 
   searchRepos: query =>
-    api.get('/github/repos/search', {
-      params: {
-        q: query,
-      },
-    }),
+    api.get(
+      '/github/repos/search',
+      {
+        params: {
+          q: query,
+        },
+      }
+    ),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -286,20 +299,28 @@ export const githubApi = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const runApi = {
-
   repoRuns: (repoId, params) =>
-    api.get(`/repositories/${repoId}/runs`, {
-      params,
-    }),
+    api.get(
+      `/repositories/${repoId}/runs`,
+      {
+        params,
+      }
+    ),
 
   get: (repoId, runId) =>
-    api.get(`/repositories/${repoId}/runs/${runId}`),
+    api.get(
+      `/repositories/${repoId}/runs/${runId}`
+    ),
 
   analysis: (repoId, runId) =>
-    api.get(`/repositories/${repoId}/runs/${runId}/analysis`),
+    api.get(
+      `/repositories/${repoId}/runs/${runId}/analysis`
+    ),
 
   analyse: (repoId, runId) =>
-    api.post(`/repositories/${repoId}/runs/${runId}/analysis`),
+    api.post(
+      `/repositories/${repoId}/runs/${runId}/analysis`
+    ),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -307,9 +328,10 @@ export const runApi = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const analyticsApi = {
-
   metrics: repoId =>
-    api.get(`/repositories/${repoId}/metrics`),
+    api.get(
+      `/repositories/${repoId}/metrics`
+    ),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -317,12 +339,19 @@ export const analyticsApi = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const aiApi = {
-
   trigger: (repoId, runId) =>
-    api.post(`/repositories/${repoId}/runs/${runId}/analysis`),
+    api.post(
+      `/repositories/${repoId}/runs/${runId}/analysis`
+    ),
 
   getAnalysis: (repoId, runId) =>
-    api.get(`/repositories/${repoId}/runs/${runId}/analysis`),
+    api.get(
+      `/repositories/${repoId}/runs/${runId}/analysis`
+    ),
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Default API Client
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default api

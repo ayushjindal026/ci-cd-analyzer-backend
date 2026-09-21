@@ -1,5 +1,3 @@
-// PATH: backend/api-service/src/main/java/com/ayush/cicd/api/service/RefreshTokenService.java
-
 package com.ayush.cicd.api.service;
 
 import com.ayush.cicd.common.entity.RefreshToken;
@@ -20,18 +18,18 @@ import java.util.List;
 /**
  * Refresh token lifecycle manager.
  *
- * RESPONSIBILITIES:
+ * Responsibilities:
  * - Issue refresh tokens
  * - Rotate refresh tokens
  * - Detect token reuse attacks
  * - Revoke sessions
  * - Cleanup expired tokens
  *
- * SECURITY MODEL:
+ * Security model:
  * - Refresh tokens are single-use
- * - Rotation invalidates previous token
+ * - Rotation invalidates the previous token atomically
  * - Reuse detection revokes all sessions
- * - Limits impact of stolen refresh tokens
+ * - Maximum concurrent sessions are enforced
  */
 @Slf4j
 @Service
@@ -40,10 +38,11 @@ import java.util.List;
 public class RefreshTokenService {
 
     private final RefreshTokenRepository refreshTokenRepository;
+    private final SessionRevocationService sessionRevocationService;
 
     /**
-     * Default:
-     * 7 days
+     * Default refresh-token lifetime:
+     * 7 days.
      */
     @Value("${jwt.refresh-token-expiration-ms:604800000}")
     private long refreshTokenExpirationMs;
@@ -54,6 +53,9 @@ public class RefreshTokenService {
     @Value("${jwt.max-sessions-per-user:5}")
     private int maxSessionsPerUser;
 
+    /**
+     * Cryptographically secure random generator.
+     */
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     // ------------------------------------------------------------------------
@@ -61,7 +63,7 @@ public class RefreshTokenService {
     // ------------------------------------------------------------------------
 
     /**
-     * Creates a new refresh token session.
+     * Creates a new refresh-token session.
      */
     public RefreshToken issue(
             User user,
@@ -70,16 +72,19 @@ public class RefreshTokenService {
 
         enforceSessionLimit(user);
 
+        Instant now = Instant.now();
+
         RefreshToken refreshToken = RefreshToken.builder()
                 .token(generateSecureToken())
                 .user(user)
                 .expiresAt(
-                        Instant.now().plusMillis(refreshTokenExpirationMs))
+                        now.plusMillis(refreshTokenExpirationMs))
                 .userAgent(userAgent)
                 .ipAddress(ipAddress)
                 .build();
 
-        RefreshToken savedToken = refreshTokenRepository.save(refreshToken);
+        RefreshToken savedToken =
+                refreshTokenRepository.save(refreshToken);
 
         log.info(
                 "Issued refresh token for user: {}",
@@ -93,67 +98,81 @@ public class RefreshTokenService {
     // ------------------------------------------------------------------------
 
     /**
-     * Rotates refresh token.
+     * Rotates a refresh token.
      *
-     * SECURITY FLOW:
-     * 1. Validate token
-     * 2. Detect replay attacks
-     * 3. Mark old token as used
-     * 4. Issue new token
+     * The old token is consumed using an atomic database UPDATE.
+     *
+     * This prevents two concurrent requests from successfully
+     * rotating the same refresh token.
      */
     public RefreshToken rotate(
             String tokenValue,
             String userAgent,
             String ipAddress) {
 
-        RefreshToken existingToken = validateRefreshToken(tokenValue);
+        RefreshToken existingToken =
+                validateRefreshToken(tokenValue);
+
+        User user = existingToken.getUser();
+
+        Instant now = Instant.now();
 
         // --------------------------------------------------------------------
-        // Replay attack detection
+        // Atomically consume the existing refresh token.
         // --------------------------------------------------------------------
 
-        if (existingToken.isUsed()) {
+        int updated =
+                refreshTokenRepository.markAsUsedIfValid(
+                        tokenValue,
+                        now);
+
+        /*
+         * Exactly one concurrent request should successfully update
+         * the token.
+         *
+         * If zero rows were updated, the token was already consumed,
+         * revoked, or became invalid between validation and the
+         * atomic update.
+         */
+        if (updated != 1) {
 
             log.error(
-                    "SECURITY ALERT: Refresh token reuse detected for user: {}",
-                    existingToken.getUser().getUsername());
+                    "SECURITY ALERT: Refresh token reuse or concurrent "
+                            + "rotation detected for user: {}",
+                    user.getUsername());
 
-            refreshTokenRepository
-                    .revokeAllForUser(existingToken.getUser());
+            /*
+             * Revoke all sessions in a separate transaction.
+             *
+             * This is important because TokenReusedException causes
+             * the current transaction to roll back.
+             */
+            sessionRevocationService.revokeAllSessions(user);
 
             throw new TokenReusedException(
-                    "Refresh token reuse detected. " +
-                            "All sessions revoked.");
+                    "Refresh token reuse detected. "
+                            + "All sessions revoked.");
         }
 
         // --------------------------------------------------------------------
-        // Invalidate old token
-        // --------------------------------------------------------------------
-
-        existingToken.markAsUsed();
-
-        refreshTokenRepository.save(existingToken);
-
-        // --------------------------------------------------------------------
-        // Issue new token
+        // Issue replacement refresh token.
         // --------------------------------------------------------------------
 
         RefreshToken newRefreshToken = RefreshToken.builder()
                 .token(generateSecureToken())
-                .user(existingToken.getUser())
+                .user(user)
                 .expiresAt(
-                        Instant.now()
-                                .plusMillis(
-                                        refreshTokenExpirationMs))
+                        now.plusMillis(refreshTokenExpirationMs))
                 .userAgent(userAgent)
                 .ipAddress(ipAddress)
                 .build();
 
-        RefreshToken savedToken = refreshTokenRepository.save(newRefreshToken);
+        RefreshToken savedToken =
+                refreshTokenRepository.save(newRefreshToken);
 
         log.info(
                 "Rotated refresh token for user: {}",
-                existingToken.getUser().getUsername());
+                user.getUsername());
 
         return savedToken;
     }
@@ -163,23 +182,33 @@ public class RefreshTokenService {
     // ------------------------------------------------------------------------
 
     /**
-     * Validates refresh token existence and state.
+     * Validates refresh-token existence and state.
+     *
+     * Used tokens are intentionally not rejected here.
+     *
+     * The actual single-use guarantee is enforced atomically inside
+     * rotate() using markAsUsedIfValid().
      */
     @Transactional(readOnly = true)
     public RefreshToken validateRefreshToken(String tokenValue) {
 
-        RefreshToken token = refreshTokenRepository.findByToken(tokenValue)
-                .orElseThrow(() -> new TokenInvalidException(
-                        "Refresh token not found"));
+        if (tokenValue == null || tokenValue.isBlank()) {
+            throw new TokenInvalidException(
+                    "Refresh token is required");
+        }
+
+        RefreshToken token =
+                refreshTokenRepository.findByToken(tokenValue)
+                        .orElseThrow(() ->
+                                new TokenInvalidException(
+                                        "Refresh token not found"));
 
         if (token.isRevoked()) {
-
             throw new TokenInvalidException(
                     "Refresh token revoked");
         }
 
         if (token.isExpired()) {
-
             throw new TokenInvalidException(
                     "Refresh token expired");
         }
@@ -196,20 +225,29 @@ public class RefreshTokenService {
      */
     public void revoke(String tokenValue) {
 
-        int updated = refreshTokenRepository.revokeByToken(tokenValue);
+        if (tokenValue == null || tokenValue.isBlank()) {
+            return;
+        }
+
+        int updated =
+                refreshTokenRepository.revokeByToken(tokenValue);
 
         if (updated > 0) {
-
             log.info("Refresh token revoked.");
         }
     }
 
     /**
-     * Logout all sessions.
+     * Logout all sessions for a user.
      */
     public void revokeAll(User user) {
 
-        int revokedCount = refreshTokenRepository.revokeAllForUser(user);
+        if (user == null) {
+            return;
+        }
+
+        int revokedCount =
+                refreshTokenRepository.revokeAllForUser(user);
 
         log.info(
                 "Revoked {} sessions for user: {}",
@@ -221,6 +259,9 @@ public class RefreshTokenService {
     // Session Management
     // ------------------------------------------------------------------------
 
+    /**
+     * Returns all active sessions for a user.
+     */
     @Transactional(readOnly = true)
     public List<RefreshToken> getActiveSessions(User user) {
 
@@ -229,6 +270,9 @@ public class RefreshTokenService {
                 Instant.now());
     }
 
+    /**
+     * Returns the number of active sessions for a user.
+     */
     @Transactional(readOnly = true)
     public long getActiveSessionCount(User user) {
 
@@ -237,16 +281,24 @@ public class RefreshTokenService {
                 Instant.now());
     }
 
+    /**
+     * Enforces the maximum number of active sessions.
+     *
+     * Current policy:
+     * When the maximum is reached, all existing sessions are revoked
+     * before creating the new session.
+     */
     private void enforceSessionLimit(User user) {
 
-        long activeSessions = refreshTokenRepository.countActiveSessions(
-                user,
-                Instant.now());
+        long activeSessions =
+                refreshTokenRepository.countActiveSessions(
+                        user,
+                        Instant.now());
 
         if (activeSessions >= maxSessionsPerUser) {
 
             log.warn(
-                    "User {} exceeded max sessions limit ({})",
+                    "User {} reached maximum session limit ({})",
                     user.getUsername(),
                     maxSessionsPerUser);
 
@@ -271,12 +323,14 @@ public class RefreshTokenService {
 
         try {
 
-            int deleted = refreshTokenRepository
-                    .deleteExpiredAndInvalidTokens(
-                            Instant.now());
+            int deleted =
+                    refreshTokenRepository
+                            .deleteExpiredAndInvalidTokens(
+                                    Instant.now());
 
             log.info(
-                    "Refresh token cleanup completed. Deleted {} tokens.",
+                    "Refresh token cleanup completed. "
+                            + "Deleted {} tokens.",
                     deleted);
 
         } catch (Exception e) {
@@ -292,9 +346,9 @@ public class RefreshTokenService {
     // ------------------------------------------------------------------------
 
     /**
-     * Generates cryptographically secure opaque token.
+     * Generates a cryptographically secure opaque refresh token.
      *
-     * 48 bytes = 384 bits entropy.
+     * 48 bytes = 384 bits of entropy.
      */
     private String generateSecureToken() {
 
@@ -311,6 +365,10 @@ public class RefreshTokenService {
     // Exceptions
     // ------------------------------------------------------------------------
 
+    /**
+     * Thrown when a refresh token is missing, invalid,
+     * revoked or expired.
+     */
     public static class TokenInvalidException
             extends RuntimeException {
 
@@ -319,6 +377,10 @@ public class RefreshTokenService {
         }
     }
 
+    /**
+     * Thrown when a previously issued refresh token
+     * is reused.
+     */
     public static class TokenReusedException
             extends RuntimeException {
 
@@ -326,4 +388,4 @@ public class RefreshTokenService {
             super(message);
         }
     }
-}   
+}

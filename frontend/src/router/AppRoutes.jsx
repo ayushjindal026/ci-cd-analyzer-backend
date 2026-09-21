@@ -10,6 +10,7 @@ const Login = lazy(() => import('@/pages/Login').then(m => ({ default: m.Login }
 const OAuthSuccess = lazy(() => import('@/pages/OAuthSuccess'))
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
 const Pipelines = lazy(() => import('@/pages/Pipelines'))
+const RepositoryDetails = lazy(() => import('@/pages/RepositoryDetails'))
 const Runs = lazy(() => import('@/pages/Runs'))
 const Insights = lazy(() => import('@/pages/Insights'))
 const Settings = lazy(() => import('@/pages/Settings'))
@@ -70,6 +71,7 @@ export function AppRoutes() {
             <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
                 <Route index element={<Page><Dashboard /></Page>} />
                 <Route path="repos" element={<Page><Pipelines /></Page>} />
+                <Route path="repos/:id" element={<Page><RepositoryDetails /></Page>} />
                 <Route path="runs" element={<Page><Runs /></Page>} />
                 <Route path="insights" element={<Page><Insights /></Page>} />
                 <Route path="settings" element={<Page><Settings /></Page>} />
