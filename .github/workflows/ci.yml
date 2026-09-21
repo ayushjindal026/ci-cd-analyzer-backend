@@ -2,10 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
 
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
 
@@ -27,7 +27,7 @@ jobs:
           - 5432:5432
 
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d cicd"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -38,23 +38,40 @@ jobs:
         ports:
           - 6379:6379
 
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
 
+      # ─────────────────────────────────────────────
+      # Checkout
+      # ─────────────────────────────────────────────
+
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+
+      # ─────────────────────────────────────────────
+      # Java
+      # ─────────────────────────────────────────────
 
       - name: Set up Java 21
-        uses: actions/setup-java@v4
-
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: maven
 
+
+      # ─────────────────────────────────────────────
+      # Backend Build & Tests
+      # ─────────────────────────────────────────────
+
       - name: Build and test backend
-
         working-directory: backend
-
         run: mvn clean verify
 
         env:
@@ -62,16 +79,21 @@ jobs:
           SPRING_DATASOURCE_USERNAME: postgres
           SPRING_DATASOURCE_PASSWORD: postgres
 
-          SPRING_DATA_REDIS_HOST: redis
+          SPRING_DATA_REDIS_HOST: localhost
           SPRING_DATA_REDIS_PORT: 6379
 
           JWT_SECRET: test-super-secret-key-for-ci-minimum-32-chars
 
-          GITHUB_OAUTH_SECRET: dummy-secret
+          GITHUB_CLIENT_ID: dummy-client-id
+          GITHUB_CLIENT_SECRET: dummy-client-secret
           GITHUB_TOKEN: dummy-token
 
-      - name: Build Docker image
 
+      # ─────────────────────────────────────────────
+      # Docker Build
+      # ─────────────────────────────────────────────
+
+      - name: Build Docker image
         run: |
           docker build \
             -f backend/api-service/Dockerfile \
